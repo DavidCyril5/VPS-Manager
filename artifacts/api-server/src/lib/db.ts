@@ -57,6 +57,7 @@ const SiteSchema = new Schema(
     repoUrl: { type: String, default: null },
     repoToken: { type: String, default: null },
     deployPath: String,
+    webRoot: { type: String, default: null },
     buildCommand: { type: String, default: null },
     siteType: { type: String, default: "static" },
     status: { type: String, default: "stopped" },

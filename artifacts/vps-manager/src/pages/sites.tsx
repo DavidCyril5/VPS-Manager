@@ -92,7 +92,7 @@ export default function Sites() {
   const [editTarget, setEditTarget] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({
     name: "", domain: "", repoUrl: "", repoToken: "",
-    deployPath: "", buildCommand: "", siteType: "static", autoSync: false,
+    deployPath: "", webRoot: "", buildCommand: "", siteType: "static", autoSync: false,
   });
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
@@ -111,6 +111,7 @@ export default function Sites() {
     repoUrl: "",
     repoToken: "",
     deployPath: "/var/www/html",
+    webRoot: "",
     buildCommand: "",
     siteType: "static" as const,
     autoSync: false,
@@ -139,6 +140,7 @@ export default function Sites() {
       repoUrl: (site as unknown as Record<string, string>).repoUrl ?? "",
       repoToken: "",
       deployPath: (site as unknown as Record<string, string>).deployPath ?? "",
+      webRoot: (site as unknown as Record<string, string>).webRoot ?? "",
       buildCommand: (site as unknown as Record<string, string>).buildCommand ?? "",
       siteType: site.siteType ?? "static",
       autoSync: (site as unknown as Record<string, boolean>).autoSync ?? false,
@@ -162,6 +164,7 @@ export default function Sites() {
           ...editForm,
           repoUrl: editForm.repoUrl || null,
           repoToken: editForm.repoToken || null,
+          webRoot: editForm.webRoot || null,
           buildCommand: editForm.buildCommand || null,
         },
       },
@@ -249,6 +252,7 @@ export default function Sites() {
           ...form,
           repoUrl: form.repoUrl || null,
           repoToken: form.repoToken || null,
+          webRoot: form.webRoot || null,
           buildCommand: form.buildCommand || null,
         },
       },
@@ -367,6 +371,12 @@ export default function Sites() {
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Deploy Path</label>
               <input name="deployPath" value={form.deployPath} onChange={handleChange} required className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">
+                Serve From <span className="text-xs opacity-60">(optional — subfolder nginx serves, e.g. <code>dist</code> or <code>artifacts/vps-manager/dist/public</code>)</span>
+              </label>
+              <input name="webRoot" value={form.webRoot} onChange={handleChange} placeholder="Leave blank to use Deploy Path" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Site Type</label>
@@ -646,6 +656,12 @@ export default function Sites() {
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">Deploy Path</label>
                       <input name="deployPath" value={editForm.deployPath} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        Serve From <span className="opacity-60">(subfolder nginx serves, e.g. <code>dist</code> or <code>artifacts/vps-manager/dist/public</code>)</span>
+                      </label>
+                      <input name="webRoot" value={editForm.webRoot} onChange={handleEditChange} placeholder="Leave blank to use Deploy Path" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                     </div>
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">Build Command</label>

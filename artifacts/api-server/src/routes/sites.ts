@@ -207,11 +207,16 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
     deployScript = `mkdir -p ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
   }
 
+  const rawWebRoot = siteData.webRoot as string | null;
+  const nginxRoot = rawWebRoot
+    ? (rawWebRoot.startsWith("/") ? rawWebRoot : `${deployPath}/${rawWebRoot}`)
+    : deployPath;
+
   const nginxConfig = [
     `server {`,
     `    listen 80;`,
     `    server_name ${domain};`,
-    `    root ${deployPath};`,
+    `    root ${nginxRoot};`,
     `    index index.html index.htm;`,
     ``,
     `    location / {`,
