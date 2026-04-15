@@ -180,6 +180,25 @@ router.post("/servers/:id/install-nginx", async (req, res): Promise<void> => {
   res.json(result);
 });
 
+router.get("/servers/:id/nginx-status", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const server = await Server.findOne({ id });
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  const s = server.toObject() as Record<string, unknown>;
+
+  const result = await runSshCommand(
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    "which nginx && nginx -v 2>&1 && systemctl is-active nginx 2>/dev/null || echo 'not-running'",
+    15000
+  );
+
+  const installed = result.success && result.output.includes("nginx");
+  await Server.findOneAndUpdate({ id }, { nginxInstalled: installed, updatedAt: new Date() });
+
+  res.json({ installed, version: result.output.match(/nginx\/([^\s]+)/)?.[1] ?? null, output: result.output });
+});
+
 router.get("/servers/:id/stats", async (req, res): Promise<void> => {
   const params = GetServerStatsParams.safeParse(req.params);
   if (!params.success) {

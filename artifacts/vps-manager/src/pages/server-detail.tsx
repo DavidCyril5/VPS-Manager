@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,7 +9,7 @@ import {
   getListServersQueryKey,
   getGetServerQueryKey,
 } from "@workspace/api-client-react";
-import { ArrowLeft, Cpu, HardDrive, MemoryStick, RefreshCw, Settings2, Wifi } from "lucide-react";
+import { ArrowLeft, Cpu, RefreshCw, Settings2, Wifi, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 
@@ -40,11 +41,35 @@ export default function ServerDetail() {
   const id = Number(params.id);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [nginxLive, setNginxLive] = useState<{ installed: boolean; version: string | null } | null>(null);
+  const [checkingNginx, setCheckingNginx] = useState(false);
 
   const { data: server, isLoading } = useGetServer(id, { query: { enabled: !!id } });
   const { data: stats, refetch: refetchStats, isFetching: fetchingStats } = useGetServerStats(id, { query: { enabled: !!id } });
   const testConn = useTestServerConnection();
   const installNginx = useInstallNginx();
+
+  async function handleNginxCheck() {
+    setCheckingNginx(true);
+    try {
+      const token = localStorage.getItem("vpm-token");
+      const res = await fetch(`/api/servers/${id}/nginx-status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      setNginxLive({ installed: data.installed, version: data.version });
+      queryClient.invalidateQueries({ queryKey: getGetServerQueryKey(id) });
+      queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });
+      toast({
+        title: data.installed ? `Nginx is installed${data.version ? ` (v${data.version})` : ""}` : "Nginx is NOT installed",
+        variant: data.installed ? "default" : "destructive",
+      });
+    } catch {
+      toast({ title: "Check failed", variant: "destructive" });
+    } finally {
+      setCheckingNginx(false);
+    }
+  }
 
   function handleTest() {
     testConn.mutate(
@@ -102,16 +127,14 @@ export default function ServerDetail() {
             <Wifi className="h-4 w-4" />
             Test Connection
           </button>
-          {!server.nginxInstalled && (
-            <button
-              onClick={handleNginx}
-              disabled={installNginx.isPending}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-            >
-              <Settings2 className="h-4 w-4" />
-              {installNginx.isPending ? "Installing..." : "Install Nginx"}
-            </button>
-          )}
+          <button
+            onClick={handleNginx}
+            disabled={installNginx.isPending}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            <Settings2 className="h-4 w-4" />
+            {installNginx.isPending ? "Installing..." : server.nginxInstalled ? "Reinstall Nginx" : "Install Nginx"}
+          </button>
         </div>
       </div>
 
@@ -123,10 +146,41 @@ export default function ServerDetail() {
           </div>
         </div>
         <div className="rounded-xl border border-border bg-card p-6">
-          <div className="text-sm text-muted-foreground mb-1">Nginx</div>
-          <div className={`font-semibold ${server.nginxInstalled ? "text-emerald-400" : "text-muted-foreground"}`}>
-            {server.nginxInstalled ? "Installed" : "Not installed"}
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-sm text-muted-foreground">Nginx</div>
+            <button
+              onClick={handleNginxCheck}
+              disabled={checkingNginx}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              title="Run a live check on the server"
+            >
+              {checkingNginx ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Check
+            </button>
           </div>
+          <div className="flex items-center gap-2">
+            {nginxLive !== null ? (
+              nginxLive.installed ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              ) : (
+                <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+              )
+            ) : null}
+            <div className={`font-semibold ${
+              nginxLive !== null
+                ? nginxLive.installed ? "text-emerald-400" : "text-red-400"
+                : server.nginxInstalled ? "text-emerald-400" : "text-muted-foreground"
+            }`}>
+              {nginxLive !== null
+                ? nginxLive.installed
+                  ? nginxLive.version ? `v${nginxLive.version}` : "Installed ✓"
+                  : "Not installed"
+                : server.nginxInstalled ? "Installed (cached)" : "Not installed"}
+            </div>
+          </div>
+          {nginxLive === null && (
+            <div className="text-xs text-muted-foreground mt-1">Click Check to verify live</div>
+          )}
         </div>
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="text-sm text-muted-foreground mb-1">Uptime</div>
