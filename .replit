@@ -38,8 +38,3 @@ externalPort = 80
 [[ports]]
 localPort = 23105
 externalPort = 3000
-
-[userenv]
-
-[userenv.shared]
-MONGODB_URI = "mongodb+srv://davidcyrildev:85200555@davidcyriltech.qwkqlbf.mongodb.net/?appName=davidcyriltech"
