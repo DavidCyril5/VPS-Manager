@@ -24,10 +24,12 @@ function sanitizeSite(doc: Record<string, unknown>) {
 }
 
 function nodeAutoBuild(deployPath: string): string {
-  // Single-line bash: detect package manager from lock files, install, then run build only if script exists
+  // Detect package manager from lock files; auto-install PM if missing; install deps; run build if script exists
   return (
     `cd ${deployPath} && ` +
-    `if [ -f "pnpm-lock.yaml" ]; then PM="pnpm"; elif [ -f "yarn.lock" ]; then PM="yarn"; else PM="npm"; fi && ` +
+    `if [ -f "pnpm-lock.yaml" ]; then (command -v pnpm >/dev/null 2>&1 || npm install -g pnpm); PM="pnpm"; ` +
+    `elif [ -f "yarn.lock" ]; then (command -v yarn >/dev/null 2>&1 || npm install -g yarn); PM="yarn"; ` +
+    `else PM="npm"; fi && ` +
     `$PM install && ` +
     `if node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)" 2>/dev/null; then $PM run build; fi`
   );
