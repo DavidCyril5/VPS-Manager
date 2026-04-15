@@ -1,25 +1,33 @@
 import mongoose, { Schema, model } from "mongoose";
 
-export async function connectDB(): Promise<void> {
-  const uri = process.env["MONGODB_URI"];
-  if (!uri) throw new Error("MONGODB_URI environment variable is required");
-  if (mongoose.connection.readyState !== 0) return;
-  await mongoose.connect(uri);
-}
-
-const transformOpts = {
-  transform: (_doc: unknown, ret: Record<string, unknown>) => {
-    delete ret._id;
-    delete ret.__v;
-    return ret;
+// id: false disables Mongoose's built-in _id virtual so our custom integer id field works properly
+const baseOpts = {
+  toJSON: {
+    transform: (_doc: unknown, ret: Record<string, unknown>) => {
+      delete ret._id;
+      delete ret.__v;
+      return ret;
+    },
   },
+  toObject: {
+    transform: (_doc: unknown, ret: Record<string, unknown>) => {
+      delete ret._id;
+      delete ret.__v;
+      return ret;
+    },
+  },
+  id: false,
 };
 
-const CounterSchema = new Schema({ _id: String, seq: { type: Number, default: 0 } });
+const CounterSchema = new Schema({ _id: String, seq: { type: Number, default: 0 } }, { id: false });
 const Counter = model("Counter", CounterSchema);
 
 export async function nextId(name: string): Promise<number> {
-  const result = await Counter.findByIdAndUpdate(name, { $inc: { seq: 1 } }, { upsert: true, new: true });
+  const result = await Counter.findByIdAndUpdate(
+    name,
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: "after" }
+  );
   return result!.seq as number;
 }
 
@@ -37,7 +45,7 @@ const ServerSchema = new Schema(
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
-  { toJSON: transformOpts, toObject: transformOpts }
+  baseOpts
 );
 
 const SiteSchema = new Schema(
@@ -60,7 +68,7 @@ const SiteSchema = new Schema(
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
-  { toJSON: transformOpts, toObject: transformOpts }
+  baseOpts
 );
 
 const CloudflareConfigSchema = new Schema(
@@ -73,7 +81,7 @@ const CloudflareConfigSchema = new Schema(
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
-  { toJSON: transformOpts, toObject: transformOpts }
+  baseOpts
 );
 
 const ActivitySchema = new Schema(
@@ -87,7 +95,7 @@ const ActivitySchema = new Schema(
     details: { type: String, default: null },
     createdAt: { type: Date, default: Date.now },
   },
-  { toJSON: transformOpts, toObject: transformOpts }
+  baseOpts
 );
 
 export const Server = model("Server", ServerSchema);
@@ -95,5 +103,40 @@ export const Site = model("Site", SiteSchema);
 export const CloudflareConfig = model("CloudflareConfig", CloudflareConfigSchema);
 export const Activity = model("Activity", ActivitySchema);
 
-export type ServerDoc = ReturnType<(typeof Server.prototype)["toObject"]>;
-export type SiteDoc = ReturnType<(typeof Site.prototype)["toObject"]>;
+async function repairMissingIds(): Promise<void> {
+  // Fix documents that were created before the id:false fix — they have no integer id field
+  const collections = [
+    { model: Server, name: "servers" },
+    { model: Site, name: "sites" },
+    { model: CloudflareConfig, name: "cloudflare" },
+    { model: Activity, name: "activity" },
+  ];
+
+  for (const { model: M, name } of collections) {
+    // Find docs that don't have an id field (or id is null/undefined)
+    const broken = await M.collection.find({ id: { $exists: false } }).toArray();
+    for (const doc of broken) {
+      const newId = await nextId(name);
+      await M.collection.updateOne({ _id: doc._id }, { $set: { id: newId } });
+    }
+    if (broken.length > 0) {
+      // Sync the counter to at least the highest id in the collection
+      const maxDoc = await M.collection.findOne({}, { sort: { id: -1 } });
+      if (maxDoc?.id) {
+        await Counter.findByIdAndUpdate(
+          name,
+          { $max: { seq: maxDoc.id } },
+          { upsert: true }
+        );
+      }
+    }
+  }
+}
+
+export async function connectDB(): Promise<void> {
+  const uri = process.env["MONGODB_URI"];
+  if (!uri) throw new Error("MONGODB_URI environment variable is required");
+  if (mongoose.connection.readyState !== 0) return;
+  await mongoose.connect(uri);
+  await repairMissingIds();
+}

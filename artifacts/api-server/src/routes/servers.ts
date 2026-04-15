@@ -63,7 +63,7 @@ router.patch("/servers/:id", async (req, res): Promise<void> => {
   const server = await Server.findOneAndUpdate(
     { id: params.data.id },
     { ...parsed.data, updatedAt: new Date() },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!server) {
     res.status(404).json({ error: "Server not found" });

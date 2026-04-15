@@ -67,7 +67,7 @@ router.patch("/sites/:id", async (req, res): Promise<void> => {
   const site = await Site.findOneAndUpdate(
     { id: params.data.id },
     { ...parsed.data, updatedAt: new Date() },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!site) {
     res.status(404).json({ error: "Site not found" });
