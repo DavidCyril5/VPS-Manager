@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { Site, Server, Activity, nextId } from "../lib/db";
+import { Site, Server, Activity, CloudflareConfig, nextId } from "../lib/db";
+import { getCloudflareZones, findMatchingZone, upsertDnsRecord } from "../lib/cloudflareApi";
 import {
   CreateSiteBody,
   UpdateSiteBody,
@@ -175,6 +176,39 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
     { status: newStatus, ...(result.success ? { lastDeployedAt: new Date() } : {}), updatedAt: new Date() }
   );
 
+  let dnsOutput = "";
+  if (result.success) {
+    try {
+      const cfConfigs = await CloudflareConfig.find();
+      for (const cfg of cfConfigs) {
+        const token = cfg.get("apiToken") as string;
+        const zones = await getCloudflareZones(token);
+        const zone = findMatchingZone(zones, domain);
+        if (zone) {
+          const serverIp = serverData.host as string;
+          const dnsResult = await upsertDnsRecord(token, zone.id, domain, serverIp, false);
+          dnsOutput = `\nDNS: ${dnsResult.output}`;
+          const dnsActId = await nextId("activity");
+          await Activity.create({
+            id: dnsActId,
+            siteId: siteData.id,
+            serverId: serverData.id,
+            type: "dns_setup",
+            status: dnsResult.success ? "success" : "failure",
+            message: dnsResult.success
+              ? `DNS A record set: ${domain} → ${serverIp}`
+              : `DNS auto-setup failed for ${domain}`,
+            details: dnsResult.output,
+            createdAt: new Date(),
+          });
+          break;
+        }
+      }
+    } catch (e: unknown) {
+      dnsOutput = `\nDNS auto-setup skipped: ${(e as Error).message}`;
+    }
+  }
+
   const actId = await nextId("activity");
   await Activity.create({
     id: actId,
@@ -185,11 +219,11 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
     message: result.success
       ? `${siteData.name} deployed successfully to ${domain}`
       : `Deployment of ${siteData.name} failed`,
-    details: result.output,
+    details: result.output + dnsOutput,
     createdAt: new Date(),
   });
 
-  res.json(result);
+  res.json({ ...result, output: result.output + dnsOutput });
 });
 
 router.post("/sites/:id/ssl", async (req, res): Promise<void> => {
