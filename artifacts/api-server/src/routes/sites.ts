@@ -117,45 +117,46 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
   const deployPath = siteData.deployPath as string;
   const buildCommand = siteData.buildCommand as string | null;
 
+  const domain = siteData.domain as string;
+
   let deployScript = "";
   if (repoUrl) {
     const cloneUrl = repoToken
       ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
       : repoUrl;
-    deployScript = `
-      mkdir -p ${deployPath} && \
-      if [ -d "${deployPath}/.git" ]; then
-        cd ${deployPath} && git pull
-      else
-        git clone ${cloneUrl} ${deployPath}
-      fi
-      ${buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : ""}
-    `.trim();
+    deployScript = [
+      `if [ -d "${deployPath}/.git" ]; then`,
+      `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
+      `else`,
+      `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
+      `fi`,
+      buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : "",
+    ].filter(Boolean).join("\n");
   } else {
-    deployScript = `mkdir -p ${deployPath} && echo "Deploy path created: ${deployPath}"`;
+    deployScript = `mkdir -p ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
   }
 
-  const domain = siteData.domain as string;
-  const nginxConfig = `
-server {
-    listen 80;
-    server_name ${domain};
-    root ${deployPath};
-    index index.html index.htm;
+  const nginxConfig = [
+    `server {`,
+    `    listen 80;`,
+    `    server_name ${domain};`,
+    `    root ${deployPath};`,
+    `    index index.html index.htm;`,
+    ``,
+    `    location / {`,
+    `        try_files $uri $uri/ =404;`,
+    `    }`,
+    `}`,
+  ].join("\n");
 
-    location / {
-        try_files \\$uri \\$uri/ =404;
-    }
-}
-  `.trim();
+  const nginxConfigB64 = Buffer.from(nginxConfig).toString("base64");
 
-  const setupNginx = `
-    cat > /etc/nginx/sites-available/${domain} << 'NGINX_EOF'
-${nginxConfig}
-NGINX_EOF
-    ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}
-    nginx -t && systemctl reload nginx
-  `.trim();
+  const setupNginx = [
+    `echo '${nginxConfigB64}' | base64 -d > /etc/nginx/sites-available/${domain}`,
+    `rm -f /etc/nginx/sites-enabled/${domain}`,
+    `ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}`,
+    `nginx -t && systemctl reload nginx`,
+  ].join(" && ");
 
   const fullScript = `${deployScript} && ${setupNginx}`;
   const sshOpts = {
@@ -410,14 +411,14 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
     ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
     : repoUrl;
 
-  const deployScript = `
-    if [ -d "${deployPath}/.git" ]; then
-      cd ${deployPath} && git pull
-    else
-      git clone ${cloneUrl} ${deployPath}
-    fi
-    ${buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : ""}
-  `.trim();
+  const deployScript = [
+    `if [ -d "${deployPath}/.git" ]; then`,
+    `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
+    `else`,
+    `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
+    `fi`,
+    buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : "",
+  ].filter(Boolean).join("\n");
 
   await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
 
