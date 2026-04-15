@@ -67,6 +67,7 @@ const SiteSchema = new Schema(
     sslInstalled: { type: Boolean, default: false },
     sslExpiresAt: { type: Date, default: null },
     webhookToken: { type: String, default: null },
+    cloudflareConfigId: { type: Number, default: null },
     lastDeployedAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },

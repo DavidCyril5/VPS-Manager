@@ -179,6 +179,7 @@ export const CreateSiteBody = zod.object({
   port: zod.number().optional(),
   siteType: zod.enum(["static", "nodejs", "php", "python"]),
   autoSync: zod.boolean().optional(),
+  cloudflareConfigId: zod.number().nullish(),
 });
 
 /**
@@ -206,6 +207,7 @@ export const GetSiteResponse = zod.object({
   lastDeployedAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  cloudflareConfigId: zod.number().nullish(),
 });
 
 /**
@@ -227,6 +229,7 @@ export const UpdateSiteBody = zod.object({
   port: zod.number().optional(),
   siteType: zod.enum(["static", "nodejs", "php", "python"]).optional(),
   autoSync: zod.boolean().optional(),
+  cloudflareConfigId: zod.number().nullish(),
 });
 
 export const UpdateSiteResponse = zod.object({
@@ -247,6 +250,7 @@ export const UpdateSiteResponse = zod.object({
   lastDeployedAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  cloudflareConfigId: zod.number().nullish(),
 });
 
 /**

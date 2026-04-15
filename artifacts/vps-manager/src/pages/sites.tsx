@@ -8,6 +8,7 @@ import {
   useDeploySite,
   useInstallSsl,
   useUpdateSite,
+  useListCloudflareConfigs,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
 import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText } from "lucide-react";
@@ -90,11 +91,13 @@ export default function Sites() {
 
   const updateSite = useUpdateSite();
   const { tokens: gitTokens, saveToken, deleteToken, resolveToken } = useGitTokens();
+  const { data: cfAccounts } = useListCloudflareConfigs();
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({
     name: "", domain: "", repoUrl: "", repoToken: "",
     deployPath: "", webRoot: "", buildCommand: "", startCommand: "", port: 3000, siteType: "static", autoSync: false,
+    cloudflareConfigId: 0,
   });
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
@@ -121,6 +124,7 @@ export default function Sites() {
     port: 3000,
     siteType: "static" as const,
     autoSync: false,
+    cloudflareConfigId: 0,
   });
 
   async function handleSelectSavedToken(id: number) {
@@ -153,6 +157,7 @@ export default function Sites() {
       port: (s.port as number) || 3000,
       siteType: site.siteType ?? "static",
       autoSync: (s.autoSync as boolean) ?? false,
+      cloudflareConfigId: (s.cloudflareConfigId as number) || 0,
     });
   }
 
@@ -160,7 +165,7 @@ export default function Sites() {
     const { name, value, type } = e.target;
     setEditForm((f) => ({
       ...f,
-      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : name === "port" ? Number(value) : value,
+      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : (name === "port" || name === "cloudflareConfigId") ? Number(value) : value,
     }));
   }
 
@@ -177,6 +182,7 @@ export default function Sites() {
           buildCommand: editForm.buildCommand || null,
           startCommand: editForm.startCommand || null,
           port: editForm.port || undefined,
+          cloudflareConfigId: editForm.cloudflareConfigId || null,
         },
       },
       {
@@ -241,7 +247,7 @@ export default function Sites() {
     const { name, value, type } = e.target;
     const checked = type === "checkbox" ? (e.target as HTMLInputElement).checked : undefined;
     setForm((f) => {
-      const updated = { ...f, [name]: checked !== undefined ? checked : (name === "serverId" || name === "port") ? Number(value) : value };
+      const updated = { ...f, [name]: checked !== undefined ? checked : (name === "serverId" || name === "port" || name === "cloudflareConfigId") ? Number(value) : value };
       if (name === "name" && value) {
         const slug = slugify(value);
         if (defaultPaths.includes(f.deployPath) || f.deployPath === `/var/www/${slugify(f.name)}`) {
@@ -267,6 +273,7 @@ export default function Sites() {
           buildCommand: form.buildCommand || null,
           startCommand: form.startCommand || null,
           port: form.port || undefined,
+          cloudflareConfigId: form.cloudflareConfigId || null,
         },
       },
       {
@@ -388,6 +395,15 @@ export default function Sites() {
                 <option value="python">Python</option>
               </select>
             </div>
+            {cfAccounts && cfAccounts.length > 0 && (
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">Cloudflare Account <span className="opacity-60 text-xs">(for DNS)</span></label>
+                <select name="cloudflareConfigId" value={form.cloudflareConfigId} onChange={handleChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+                  <option value={0}>— Auto-detect from all accounts —</option>
+                  {cfAccounts.map((a) => <option key={a.id} value={a.id}>{a.label} ({a.email})</option>)}
+                </select>
+              </div>
+            )}
             <div className="col-span-2 space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-sm text-muted-foreground">Repo URL (optional)</label>
@@ -702,6 +718,15 @@ export default function Sites() {
                         <option value="python">Python</option>
                       </select>
                     </div>
+                    {cfAccounts && cfAccounts.length > 0 && (
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Cloudflare Account <span className="opacity-60">(for DNS)</span></label>
+                        <select name="cloudflareConfigId" value={editForm.cloudflareConfigId} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+                          <option value={0}>— Auto-detect from all accounts —</option>
+                          {cfAccounts.map((a) => <option key={a.id} value={a.id}>{a.label} ({a.email})</option>)}
+                        </select>
+                      </div>
+                    )}
                     {(editForm.siteType === "nodejs" || editForm.siteType === "python") && (<>
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">

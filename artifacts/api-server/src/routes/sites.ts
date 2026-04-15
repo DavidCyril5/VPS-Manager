@@ -23,6 +23,15 @@ function sanitizeSite(doc: Record<string, unknown>) {
   return { ...doc, repoToken: doc.repoToken ? "***" : null };
 }
 
+async function getCfConfigsForSite(siteData: Record<string, unknown>) {
+  const assignedId = siteData.cloudflareConfigId as number | null | undefined;
+  if (assignedId) {
+    const assigned = await CloudflareConfig.findOne({ id: assignedId });
+    if (assigned) return [assigned];
+  }
+  return CloudflareConfig.find();
+}
+
 function nodeAutoBuild(deployPath: string): string {
   // Must use semicolons inside if/elif/else — joining with && breaks elif/else syntax
   const hasBuildScript = `node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)" 2>/dev/null`;
@@ -253,7 +262,7 @@ router.delete("/sites/:id", async (req, res): Promise<void> => {
   }
 
   try {
-    const cfConfigs = await CloudflareConfig.find();
+    const cfConfigs = await getCfConfigsForSite(siteData);
     for (const cfg of cfConfigs) {
       const token = cfg.get("apiToken") as string;
       const zones = await getCloudflareZones(token);
@@ -327,7 +336,7 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
   let dnsOutput = "";
   if (result.success) {
     try {
-      const cfConfigs = await CloudflareConfig.find();
+      const cfConfigs = await getCfConfigsForSite(siteData);
       for (const cfg of cfConfigs) {
         const token = cfg.get("apiToken") as string;
         const zones = await getCloudflareZones(token);
@@ -437,7 +446,7 @@ router.get("/sites/:id/deploy/stream", async (req, res): Promise<void> => {
   let dnsOutput = "";
   if (result.success) {
     try {
-      const cfConfigs = await CloudflareConfig.find();
+      const cfConfigs = await getCfConfigsForSite(siteData);
       for (const cfg of cfConfigs) {
         const token = cfg.get("apiToken") as string;
         const zones = await getCloudflareZones(token);
