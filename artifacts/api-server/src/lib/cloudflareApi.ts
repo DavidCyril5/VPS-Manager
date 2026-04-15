@@ -84,6 +84,37 @@ export async function upsertDnsRecord(
   return createDnsRecord(apiToken, zoneId, domain, ip, proxied);
 }
 
+export async function deleteDnsRecord(
+  apiToken: string,
+  zoneId: string,
+  recordId: string
+): Promise<{ success: boolean; output: string }> {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records/${recordId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
+  });
+  const data = (await res.json()) as { success: boolean; errors?: { message: string }[] };
+  if (!data.success) {
+    const errors = data.errors?.map((e) => e.message).join(", ") ?? "Unknown error";
+    return { success: false, output: `DNS record deletion failed: ${errors}` };
+  }
+  return { success: true, output: `DNS record deleted` };
+}
+
+export async function deleteDnsRecordByName(
+  apiToken: string,
+  zoneId: string,
+  domain: string
+): Promise<{ success: boolean; output: string }> {
+  const records = await listDnsRecords(apiToken, zoneId, domain);
+  if (records.length === 0) return { success: true, output: "No DNS record found to delete" };
+  const results = await Promise.all(records.map((r) => deleteDnsRecord(apiToken, zoneId, r.id)));
+  const failed = results.filter((r) => !r.success);
+  return failed.length === 0
+    ? { success: true, output: `DNS A record removed for ${domain}` }
+    : { success: false, output: failed.map((r) => r.output).join(", ") };
+}
+
 export function findMatchingZone(zones: CloudflareZone[], domain: string): CloudflareZone | null {
   const parts = domain.split(".");
   for (let i = 0; i < parts.length - 1; i++) {

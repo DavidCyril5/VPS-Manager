@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { Site, Server, Activity, CloudflareConfig, nextId } from "../lib/db";
-import { getCloudflareZones, findMatchingZone, upsertDnsRecord } from "../lib/cloudflareApi";
+import { getCloudflareZones, findMatchingZone, upsertDnsRecord, deleteDnsRecordByName } from "../lib/cloudflareApi";
 import {
   CreateSiteBody,
   UpdateSiteBody,
@@ -88,6 +88,53 @@ router.delete("/sites/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Site not found" });
     return;
   }
+  const siteData = site.toObject() as Record<string, unknown>;
+  const domain = siteData.domain as string;
+  const deployPath = siteData.deployPath as string;
+
+  const server = await Server.findOne({ id: siteData.serverId });
+  if (server) {
+    const serverData = server.toObject() as Record<string, unknown>;
+    const sshOpts = {
+      host: serverData.host as string,
+      port: serverData.port as number,
+      username: serverData.username as string,
+      password: serverData.password as string,
+      privateKey: serverData.privateKey as string | null,
+    };
+    const cleanupScript = [
+      `rm -f /etc/nginx/sites-enabled/${domain}`,
+      `rm -f /etc/nginx/sites-available/${domain}`,
+      `nginx -t && systemctl reload nginx`,
+      `rm -rf ${deployPath}`,
+    ].join(" && ");
+    await runSshCommand(sshOpts, cleanupScript, 30000).catch(() => {});
+  }
+
+  try {
+    const cfConfigs = await CloudflareConfig.find();
+    for (const cfg of cfConfigs) {
+      const token = cfg.get("apiToken") as string;
+      const zones = await getCloudflareZones(token);
+      const zone = findMatchingZone(zones, domain);
+      if (zone) {
+        await deleteDnsRecordByName(token, zone.id, domain);
+        break;
+      }
+    }
+  } catch (_) {}
+
+  const actId = await nextId("activity");
+  await Activity.create({
+    id: actId,
+    siteId: siteData.id,
+    serverId: server ? (server.toObject() as Record<string, unknown>).id : null,
+    type: "delete",
+    status: "success",
+    message: `Site ${siteData.name} deleted — Nginx config, DNS record, and files removed`,
+    createdAt: new Date(),
+  });
+
   res.sendStatus(204);
 });
 
