@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, cloudflareConfigsTable, activityTable } from "@workspace/db";
+import { CloudflareConfig, Activity, nextId } from "../lib/db";
 import {
   CreateCloudflareConfigBody,
   DeleteCloudflareConfigParams,
@@ -13,8 +12,14 @@ import { getCloudflareZones, createDnsRecord } from "../lib/cloudflareApi";
 const router: IRouter = Router();
 
 router.get("/cloudflare", async (_req, res): Promise<void> => {
-  const configs = await db.select().from(cloudflareConfigsTable);
-  res.json(configs.map(c => ({ id: c.id, label: c.label, email: c.email, zoneId: c.zoneId, createdAt: c.createdAt.toISOString() })));
+  const configs = await CloudflareConfig.find().sort({ createdAt: -1 });
+  res.json(
+    configs.map((c) => {
+      const obj = c.toObject() as Record<string, unknown>;
+      const { apiToken: _t, ...safe } = obj;
+      return safe;
+    })
+  );
 });
 
 router.post("/cloudflare", async (req, res): Promise<void> => {
@@ -23,9 +28,11 @@ router.post("/cloudflare", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-
-  const [config] = await db.insert(cloudflareConfigsTable).values(parsed.data).returning();
-  res.status(201).json({ id: config.id, label: config.label, email: config.email, zoneId: config.zoneId, createdAt: config.createdAt.toISOString() });
+  const id = await nextId("cloudflare");
+  const config = await CloudflareConfig.create({ id, ...parsed.data, createdAt: new Date(), updatedAt: new Date() });
+  const obj = config.toObject() as Record<string, unknown>;
+  const { apiToken: _t, ...safe } = obj;
+  res.status(201).json(safe);
 });
 
 router.delete("/cloudflare/:id", async (req, res): Promise<void> => {
@@ -34,13 +41,11 @@ router.delete("/cloudflare/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [config] = await db.delete(cloudflareConfigsTable).where(eq(cloudflareConfigsTable.id, params.data.id)).returning();
+  const config = await CloudflareConfig.findOneAndDelete({ id: params.data.id });
   if (!config) {
     res.status(404).json({ error: "Cloudflare config not found" });
     return;
   }
-
   res.sendStatus(204);
 });
 
@@ -50,15 +55,14 @@ router.get("/cloudflare/:id/zones", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [config] = await db.select().from(cloudflareConfigsTable).where(eq(cloudflareConfigsTable.id, params.data.id));
+  const config = await CloudflareConfig.findOne({ id: params.data.id });
   if (!config) {
     res.status(404).json({ error: "Cloudflare config not found" });
     return;
   }
 
   try {
-    const zones = await getCloudflareZones(config.apiToken);
+    const zones = await getCloudflareZones(config.get("apiToken") as string);
     res.json(zones);
   } catch (e: unknown) {
     res.status(502).json({ error: (e as Error).message });
@@ -71,32 +75,35 @@ router.post("/cloudflare/:id/create-dns", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
   const parsed = CreateDnsRecordBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-
-  const [config] = await db.select().from(cloudflareConfigsTable).where(eq(cloudflareConfigsTable.id, params.data.id));
+  const config = await CloudflareConfig.findOne({ id: params.data.id });
   if (!config) {
     res.status(404).json({ error: "Cloudflare config not found" });
     return;
   }
 
   const result = await createDnsRecord(
-    config.apiToken,
+    config.get("apiToken") as string,
     parsed.data.zoneId,
     parsed.data.domain,
     parsed.data.ip,
     parsed.data.proxied ?? true
   );
 
-  await db.insert(activityTable).values({
+  const actId = await nextId("activity");
+  await Activity.create({
+    id: actId,
     type: "dns_setup",
     status: result.success ? "success" : "failure",
-    message: result.success ? `DNS record created for ${parsed.data.domain}` : `DNS record creation failed for ${parsed.data.domain}`,
+    message: result.success
+      ? `DNS record created for ${parsed.data.domain}`
+      : `DNS record creation failed for ${parsed.data.domain}`,
     details: result.output,
+    createdAt: new Date(),
   });
 
   res.json(result);

@@ -1,8 +1,7 @@
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { Client as SshClient } from "ssh2";
-import { eq } from "drizzle-orm";
-import { db, serversTable } from "@workspace/db";
+import { connectDB, Server } from "./lib/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 
@@ -17,10 +16,10 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const server = createServer(app);
+const httpServer = createServer(app);
 
 // WebSocket SSH Terminal
-const wss = new WebSocketServer({ server, path: "/api/terminal" });
+const wss = new WebSocketServer({ server: httpServer, path: "/api/terminal" });
 
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url ?? "", `http://localhost`);
@@ -35,17 +34,18 @@ wss.on("connection", (ws, req) => {
   let sshConn: InstanceType<typeof SshClient> | null = null;
   let sshStream: ReturnType<InstanceType<typeof SshClient>["shell"]> extends Promise<infer T> ? T : unknown = null as unknown;
 
-  db.select().from(serversTable).where(eq(serversTable.id, serverId)).then(([server]) => {
+  Server.findOne({ id: serverId }).then((server) => {
     if (!server) {
       ws.send(JSON.stringify({ type: "error", data: "Server not found\r\n" }));
       ws.close();
       return;
     }
 
+    const s = server.toObject() as Record<string, unknown>;
     sshConn = new SshClient();
 
     sshConn.on("ready", () => {
-      ws.send(JSON.stringify({ type: "data", data: `\x1b[32mConnected to ${server.host}\x1b[0m\r\n` }));
+      ws.send(JSON.stringify({ type: "data", data: `\x1b[32mConnected to ${s.host}\x1b[0m\r\n` }));
 
       sshConn!.shell({ term: "xterm-256color", cols: 220, rows: 50 }, (err, stream) => {
         if (err) {
@@ -103,16 +103,16 @@ wss.on("connection", (ws, req) => {
     });
 
     const connectOpts: Record<string, unknown> = {
-      host: server.host,
-      port: server.port,
-      username: server.username,
+      host: s.host,
+      port: s.port,
+      username: s.username,
       readyTimeout: 15000,
     };
 
-    if (server.privateKey) {
-      connectOpts.privateKey = server.privateKey;
+    if (s.privateKey) {
+      connectOpts.privateKey = s.privateKey;
     } else {
-      connectOpts.password = server.password;
+      connectOpts.password = s.password;
     }
 
     sshConn.connect(connectOpts as Parameters<InstanceType<typeof SshClient>["connect"]>[0]);
@@ -128,10 +128,19 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-server.listen(port, (err?: Error) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
+// Connect to MongoDB then start listening
+connectDB()
+  .then(() => {
+    logger.info("Connected to MongoDB");
+    httpServer.listen(port, (err?: Error) => {
+      if (err) {
+        logger.error({ err }, "Error listening on port");
+        process.exit(1);
+      }
+      logger.info({ port }, "Server listening");
+    });
+  })
+  .catch((err: Error) => {
+    logger.error({ err }, "Failed to connect to MongoDB");
     process.exit(1);
-  }
-  logger.info({ port }, "Server listening");
-});
+  });

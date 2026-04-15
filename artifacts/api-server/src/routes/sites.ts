@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
-import { db, sitesTable, serversTable, activityTable } from "@workspace/db";
+import { Site, Server, Activity, nextId } from "../lib/db";
 import {
   CreateSiteBody,
   UpdateSiteBody,
@@ -19,13 +18,13 @@ import crypto from "crypto";
 
 const router: IRouter = Router();
 
-function sanitizeSite(s: typeof sitesTable.$inferSelect) {
-  return { ...s, repoToken: s.repoToken ? "***" : null };
+function sanitizeSite(doc: Record<string, unknown>) {
+  return { ...doc, repoToken: doc.repoToken ? "***" : null };
 }
 
 router.get("/sites", async (_req, res): Promise<void> => {
-  const sites = await db.select().from(sitesTable).orderBy(desc(sitesTable.createdAt));
-  res.json(sites.map(sanitizeSite));
+  const sites = await Site.find().sort({ createdAt: -1 });
+  res.json(sites.map((s) => sanitizeSite(s.toObject() as Record<string, unknown>)));
 });
 
 router.post("/sites", async (req, res): Promise<void> => {
@@ -34,16 +33,10 @@ router.post("/sites", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-
   const webhookToken = crypto.randomBytes(24).toString("hex");
-
-  const [site] = await db.insert(sitesTable).values({
-    ...parsed.data,
-    status: "stopped",
-    webhookToken,
-  }).returning();
-
-  res.status(201).json(sanitizeSite(site));
+  const id = await nextId("sites");
+  const site = await Site.create({ id, ...parsed.data, status: "stopped", webhookToken, createdAt: new Date(), updatedAt: new Date() });
+  res.status(201).json(sanitizeSite(site.toObject() as Record<string, unknown>));
 });
 
 router.get("/sites/:id", async (req, res): Promise<void> => {
@@ -52,14 +45,12 @@ router.get("/sites/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.id, params.data.id));
+  const site = await Site.findOne({ id: params.data.id });
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
-
-  res.json(sanitizeSite(site));
+  res.json(sanitizeSite(site.toObject() as Record<string, unknown>));
 });
 
 router.patch("/sites/:id", async (req, res): Promise<void> => {
@@ -68,20 +59,21 @@ router.patch("/sites/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
   const parsed = UpdateSiteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-
-  const [site] = await db.update(sitesTable).set(parsed.data).where(eq(sitesTable.id, params.data.id)).returning();
+  const site = await Site.findOneAndUpdate(
+    { id: params.data.id },
+    { ...parsed.data, updatedAt: new Date() },
+    { new: true }
+  );
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
-
-  res.json(sanitizeSite(site));
+  res.json(sanitizeSite(site.toObject() as Record<string, unknown>));
 });
 
 router.delete("/sites/:id", async (req, res): Promise<void> => {
@@ -90,13 +82,11 @@ router.delete("/sites/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [site] = await db.delete(sitesTable).where(eq(sitesTable.id, params.data.id)).returning();
+  const site = await Site.findOneAndDelete({ id: params.data.id });
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
-
   res.sendStatus(204);
 });
 
@@ -106,46 +96,51 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.id, params.data.id));
+  const site = await Site.findOne({ id: params.data.id });
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
+  const siteData = site.toObject() as Record<string, unknown>;
 
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, site.serverId));
+  const server = await Server.findOne({ id: siteData.serverId });
   if (!server) {
     res.status(404).json({ error: "Server not found for this site" });
     return;
   }
+  const serverData = server.toObject() as Record<string, unknown>;
 
-  await db.update(sitesTable).set({ status: "deploying" }).where(eq(sitesTable.id, site.id));
+  await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
+
+  const repoUrl = siteData.repoUrl as string | null;
+  const repoToken = siteData.repoToken as string | null;
+  const deployPath = siteData.deployPath as string;
+  const buildCommand = siteData.buildCommand as string | null;
 
   let deployScript = "";
-
-  if (site.repoUrl) {
-    const repoUrl = site.repoToken
-      ? site.repoUrl.replace("https://", `https://oauth2:${site.repoToken}@`)
-      : site.repoUrl;
-
+  if (repoUrl) {
+    const cloneUrl = repoToken
+      ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
+      : repoUrl;
     deployScript = `
-      mkdir -p ${site.deployPath} && \
-      if [ -d "${site.deployPath}/.git" ]; then
-        cd ${site.deployPath} && git pull
+      mkdir -p ${deployPath} && \
+      if [ -d "${deployPath}/.git" ]; then
+        cd ${deployPath} && git pull
       else
-        git clone ${repoUrl} ${site.deployPath}
+        git clone ${cloneUrl} ${deployPath}
       fi
-      ${site.buildCommand ? `&& cd ${site.deployPath} && ${site.buildCommand}` : ""}
+      ${buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : ""}
     `.trim();
   } else {
-    deployScript = `mkdir -p ${site.deployPath} && echo "Deploy path created: ${site.deployPath}"`;
+    deployScript = `mkdir -p ${deployPath} && echo "Deploy path created: ${deployPath}"`;
   }
 
+  const domain = siteData.domain as string;
   const nginxConfig = `
 server {
     listen 80;
-    server_name ${site.domain};
-    root ${site.deployPath};
+    server_name ${domain};
+    root ${deployPath};
     index index.html index.htm;
 
     location / {
@@ -155,34 +150,42 @@ server {
   `.trim();
 
   const setupNginx = `
-    cat > /etc/nginx/sites-available/${site.domain} << 'NGINX_EOF'
+    cat > /etc/nginx/sites-available/${domain} << 'NGINX_EOF'
 ${nginxConfig}
 NGINX_EOF
-    ln -sf /etc/nginx/sites-available/${site.domain} /etc/nginx/sites-enabled/${site.domain}
+    ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}
     nginx -t && systemctl reload nginx
   `.trim();
 
   const fullScript = `${deployScript} && ${setupNginx}`;
+  const sshOpts = {
+    host: serverData.host as string,
+    port: serverData.port as number,
+    username: serverData.username as string,
+    password: serverData.password as string,
+    privateKey: serverData.privateKey as string | null,
+  };
 
-  const result = await runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
-    fullScript,
-    120000
+  const result = await runSshCommand(sshOpts, fullScript, 120000);
+  const newStatus = result.success ? "active" : "failed";
+
+  await Site.findOneAndUpdate(
+    { id: siteData.id },
+    { status: newStatus, ...(result.success ? { lastDeployedAt: new Date() } : {}), updatedAt: new Date() }
   );
 
-  const newStatus = result.success ? "active" : "failed";
-  await db.update(sitesTable).set({
-    status: newStatus,
-    lastDeployedAt: result.success ? new Date() : undefined,
-  }).where(eq(sitesTable.id, site.id));
-
-  await db.insert(activityTable).values({
-    siteId: site.id,
-    serverId: server.id,
+  const actId = await nextId("activity");
+  await Activity.create({
+    id: actId,
+    siteId: siteData.id,
+    serverId: serverData.id,
     type: "deploy",
     status: result.success ? "success" : "failure",
-    message: result.success ? `${site.name} deployed successfully to ${site.domain}` : `Deployment of ${site.name} failed`,
+    message: result.success
+      ? `${siteData.name} deployed successfully to ${domain}`
+      : `Deployment of ${siteData.name} failed`,
     details: result.output,
+    createdAt: new Date(),
   });
 
   res.json(result);
@@ -194,47 +197,56 @@ router.post("/sites/:id/ssl", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.id, params.data.id));
+  const site = await Site.findOne({ id: params.data.id });
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
+  const siteData = site.toObject() as Record<string, unknown>;
 
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, site.serverId));
+  const server = await Server.findOne({ id: siteData.serverId });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const serverData = server.toObject() as Record<string, unknown>;
 
-  const sslScript = `certbot --nginx -d ${site.domain} --non-interactive --agree-tos --email admin@${site.domain} --redirect`;
+  const domain = siteData.domain as string;
+  const sslScript = `certbot --nginx -d ${domain} --non-interactive --agree-tos --email admin@${domain} --redirect`;
+  const sshOpts = {
+    host: serverData.host as string,
+    port: serverData.port as number,
+    username: serverData.username as string,
+    password: serverData.password as string,
+    privateKey: serverData.privateKey as string | null,
+  };
 
-  const result = await runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
-    sslScript,
-    120000
-  );
+  const result = await runSshCommand(sshOpts, sslScript, 120000);
 
-  let sslExpiresAt: Date | undefined;
   if (result.success) {
-    // Parse expiry from certbot output: "Expiry Date: 2025-07-12 ..."
     const expiryMatch = result.output.match(/Expiry Date:\s+(\d{4}-\d{2}-\d{2})/);
-    if (expiryMatch?.[1]) {
-      sslExpiresAt = new Date(expiryMatch[1]);
-    } else {
-      // Default to 90 days from now (certbot standard)
-      sslExpiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    }
-    await db.update(sitesTable).set({ sslInstalled: true, sslExpiresAt }).where(eq(sitesTable.id, site.id));
+    const sslExpiresAt = expiryMatch?.[1]
+      ? new Date(expiryMatch[1])
+      : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
+    await Site.findOneAndUpdate(
+      { id: siteData.id },
+      { sslInstalled: true, sslExpiresAt, updatedAt: new Date() }
+    );
   }
 
-  await db.insert(activityTable).values({
-    siteId: site.id,
-    serverId: server.id,
+  const actId = await nextId("activity");
+  await Activity.create({
+    id: actId,
+    siteId: siteData.id,
+    serverId: serverData.id,
     type: "ssl",
     status: result.success ? "success" : "failure",
-    message: result.success ? `SSL certificate installed for ${site.domain}` : `SSL installation failed for ${site.domain}`,
+    message: result.success
+      ? `SSL certificate installed for ${domain}`
+      : `SSL installation failed for ${domain}`,
     details: result.output,
+    createdAt: new Date(),
   });
 
   res.json(result);
@@ -246,26 +258,28 @@ router.get("/sites/:id/nginx-config", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.id, params.data.id));
+  const site = await Site.findOne({ id: params.data.id });
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
+  const siteData = site.toObject() as Record<string, unknown>;
 
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, site.serverId));
+  const server = await Server.findOne({ id: siteData.serverId });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const serverData = server.toObject() as Record<string, unknown>;
 
+  const domain = siteData.domain as string;
   const result = await runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
-    `cat /etc/nginx/sites-available/${site.domain} 2>/dev/null || echo "# Config not found for ${site.domain}"`,
+    { host: serverData.host as string, port: serverData.port as number, username: serverData.username as string, password: serverData.password as string, privateKey: serverData.privateKey as string | null },
+    `cat /etc/nginx/sites-available/${domain} 2>/dev/null || echo "# Config not found for ${domain}"`,
     15000
   );
 
-  res.json({ config: result.output, domain: site.domain });
+  res.json({ config: result.output, domain });
 });
 
 router.put("/sites/:id/nginx-config", async (req, res): Promise<void> => {
@@ -274,43 +288,38 @@ router.put("/sites/:id/nginx-config", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
   const parsed = UpdateNginxConfigBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-
-  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.id, params.data.id));
+  const site = await Site.findOne({ id: params.data.id });
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
+  const siteData = site.toObject() as Record<string, unknown>;
 
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, site.serverId));
+  const server = await Server.findOne({ id: siteData.serverId });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const serverData = server.toObject() as Record<string, unknown>;
 
-  // Escape the config for heredoc
-  const escapedConfig = parsed.data.config.replace(/\$/g, "\\$");
-
+  const domain = siteData.domain as string;
   const script = `
-cat > /etc/nginx/sites-available/${site.domain} << 'NGINX_EOF'
+cat > /etc/nginx/sites-available/${domain} << 'NGINX_EOF'
 ${parsed.data.config}
 NGINX_EOF
 nginx -t && systemctl reload nginx
   `.trim();
 
   const result = await runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
+    { host: serverData.host as string, port: serverData.port as number, username: serverData.username as string, password: serverData.password as string, privateKey: serverData.privateKey as string | null },
     script,
     30000
   );
-
-  // Suppress unused variable warning
-  void escapedConfig;
 
   res.json(result);
 });
@@ -321,32 +330,34 @@ router.get("/sites/:id/ssl-status", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.id, params.data.id));
+  const site = await Site.findOne({ id: params.data.id });
   if (!site) {
     res.status(404).json({ error: "Site not found" });
     return;
   }
+  const siteData = site.toObject() as Record<string, unknown>;
 
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, site.serverId));
+  if (!siteData.sslInstalled) {
+    res.json({ installed: false, expiresAt: null, daysRemaining: null, domain: siteData.domain });
+    return;
+  }
+
+  const server = await Server.findOne({ id: siteData.serverId });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const serverData = server.toObject() as Record<string, unknown>;
+  const domain = siteData.domain as string;
 
-  if (!site.sslInstalled) {
-    res.json({ installed: false, expiresAt: null, daysRemaining: null, domain: site.domain });
-    return;
-  }
-
-  // Refresh expiry from certbot
   const result = await runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
-    `certbot certificates -d ${site.domain} 2>/dev/null | grep "Expiry Date" | head -1`,
+    { host: serverData.host as string, port: serverData.port as number, username: serverData.username as string, password: serverData.password as string, privateKey: serverData.privateKey as string | null },
+    `certbot certificates -d ${domain} 2>/dev/null | grep "Expiry Date" | head -1`,
     20000
   );
 
-  let expiresAt: string | null = site.sslExpiresAt?.toISOString() ?? null;
+  const sslExpiresAt = siteData.sslExpiresAt as Date | null;
+  let expiresAt: string | null = sslExpiresAt ? new Date(sslExpiresAt).toISOString() : null;
   let daysRemaining: number | null = null;
 
   if (result.success && result.output.trim()) {
@@ -355,16 +366,15 @@ router.get("/sites/:id/ssl-status", async (req, res): Promise<void> => {
       const expiry = new Date(match[1]);
       expiresAt = expiry.toISOString();
       daysRemaining = Math.ceil((expiry.getTime() - Date.now()) / (86400 * 1000));
-      await db.update(sitesTable).set({ sslExpiresAt: expiry }).where(eq(sitesTable.id, site.id));
+      await Site.findOneAndUpdate({ id: siteData.id }, { sslExpiresAt: expiry, updatedAt: new Date() });
     }
-  } else if (site.sslExpiresAt) {
-    daysRemaining = Math.ceil((site.sslExpiresAt.getTime() - Date.now()) / (86400 * 1000));
+  } else if (sslExpiresAt) {
+    daysRemaining = Math.ceil((new Date(sslExpiresAt).getTime() - Date.now()) / (86400 * 1000));
   }
 
-  res.json({ installed: true, expiresAt, daysRemaining, domain: site.domain });
+  res.json({ installed: true, expiresAt, daysRemaining, domain });
 });
 
-// Public webhook endpoint for auto-deploy
 router.post("/webhook/:token", async (req, res): Promise<void> => {
   const { token } = req.params;
   if (!token) {
@@ -372,60 +382,74 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
     return;
   }
 
-  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.webhookToken, token));
+  const site = await Site.findOne({ webhookToken: token });
   if (!site) {
     res.status(404).json({ error: "Invalid webhook token" });
     return;
   }
+  const siteData = site.toObject() as Record<string, unknown>;
 
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, site.serverId));
+  const server = await Server.findOne({ id: siteData.serverId });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const serverData = server.toObject() as Record<string, unknown>;
 
-  await db.update(sitesTable).set({ status: "deploying" }).where(eq(sitesTable.id, site.id));
+  const repoUrl = siteData.repoUrl as string | null;
+  const repoToken = siteData.repoToken as string | null;
+  const deployPath = siteData.deployPath as string;
+  const buildCommand = siteData.buildCommand as string | null;
 
-  let deployScript = "";
-  if (site.repoUrl) {
-    const repoUrl = site.repoToken
-      ? site.repoUrl.replace("https://", `https://oauth2:${site.repoToken}@`)
-      : site.repoUrl;
-    deployScript = `
-      if [ -d "${site.deployPath}/.git" ]; then
-        cd ${site.deployPath} && git pull
-      else
-        git clone ${repoUrl} ${site.deployPath}
-      fi
-      ${site.buildCommand ? `&& cd ${site.deployPath} && ${site.buildCommand}` : ""}
-    `.trim();
-  } else {
+  if (!repoUrl) {
     res.status(400).json({ error: "No repo configured for this site" });
     return;
   }
 
-  // Fire and forget deploy
-  runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
-    deployScript,
-    120000
-  ).then(async (result) => {
-    await db.update(sitesTable).set({
-      status: result.success ? "active" : "failed",
-      lastDeployedAt: result.success ? new Date() : undefined,
-    }).where(eq(sitesTable.id, site.id));
+  const cloneUrl = repoToken
+    ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
+    : repoUrl;
 
-    await db.insert(activityTable).values({
-      siteId: site.id,
-      serverId: server.id,
+  const deployScript = `
+    if [ -d "${deployPath}/.git" ]; then
+      cd ${deployPath} && git pull
+    else
+      git clone ${cloneUrl} ${deployPath}
+    fi
+    ${buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : ""}
+  `.trim();
+
+  await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
+
+  const sshOpts = {
+    host: serverData.host as string,
+    port: serverData.port as number,
+    username: serverData.username as string,
+    password: serverData.password as string,
+    privateKey: serverData.privateKey as string | null,
+  };
+
+  runSshCommand(sshOpts, deployScript, 120000).then(async (result) => {
+    await Site.findOneAndUpdate(
+      { id: siteData.id },
+      { status: result.success ? "active" : "failed", ...(result.success ? { lastDeployedAt: new Date() } : {}), updatedAt: new Date() }
+    );
+    const actId = await nextId("activity");
+    await Activity.create({
+      id: actId,
+      siteId: siteData.id,
+      serverId: serverData.id,
       type: "deploy",
       status: result.success ? "success" : "failure",
-      message: result.success ? `Webhook deploy of ${site.name} succeeded` : `Webhook deploy of ${site.name} failed`,
+      message: result.success
+        ? `Webhook deploy of ${siteData.name} succeeded`
+        : `Webhook deploy of ${siteData.name} failed`,
       details: result.output,
+      createdAt: new Date(),
     });
   }).catch(() => {});
 
-  res.json({ success: true, message: `Deploy triggered for ${site.name}` });
+  res.json({ success: true, message: `Deploy triggered for ${siteData.name}` });
 });
 
 export default router;

@@ -11,8 +11,8 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
+- **Database**: MongoDB Atlas via Mongoose (connection string in `MONGODB_URI` env var)
+- **Validation**: Zod (`zod/v4`)
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
@@ -42,7 +42,8 @@ Pages:
 - `/` — Dashboard with stats and recent activity
 - `/servers` — List/add/remove VPS servers, test SSH, install Nginx
 - `/servers/:id` — Server detail: stats (CPU/memory/disk), actions
-- `/sites` — List/create/deploy/delete websites
+- `/sites` — List/create/deploy/delete websites; Nginx config editor, SSL expiry badge, webhook URL
+- `/terminal` — Live SSH terminal (xterm.js + WebSocket)
 - `/cloudflare` — Add Cloudflare accounts, create DNS A records
 - `/activity` — Deployment activity log
 
@@ -64,13 +65,18 @@ Routes:
 - `POST /api/cloudflare/:id/create-dns` — Create A record
 - `GET /api/activity` — Activity log
 - `GET /api/dashboard/summary` — Stats summary
+- `GET/PUT /api/sites/:id/nginx-config` — Read/write nginx config via SSH
+- `GET /api/sites/:id/ssl-status` — Live SSL expiry check via certbot
+- `POST /api/webhook/:token` — Auto-deploy trigger (public, no auth)
+- `WS /api/terminal?serverId=N` — WebSocket SSH shell (xterm.js)
 
-### Database Tables
+### MongoDB Collections (via Mongoose)
 
-- `servers` — SSH connection info + status + nginx flag
-- `sites` — Site config: domain, repo, deploy path, type, status
-- `cloudflare_configs` — CF API tokens (stored encrypted in DB)
+- `servers` — SSH connection info, status, nginx flag; integer `id` via counter
+- `sites` — Domain, repo, deploy path, type, status, webhook token, ssl expiry
+- `cloudflareconfigs` — CF API tokens
 - `activity` — Deployment event log
+- `counters` — Auto-increment ID sequences
 
 ### SSH Library
 

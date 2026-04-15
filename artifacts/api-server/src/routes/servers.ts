@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
-import { db, serversTable, activityTable } from "@workspace/db";
+import { Server, Activity, nextId } from "../lib/db";
 import {
   CreateServerBody,
   UpdateServerBody,
@@ -15,9 +14,14 @@ import { testSshConnection, runSshCommand } from "../lib/ssh";
 
 const router: IRouter = Router();
 
-router.get("/servers", async (req, res): Promise<void> => {
-  const servers = await db.select().from(serversTable).orderBy(desc(serversTable.createdAt));
-  res.json(servers.map(s => ({ ...s, password: undefined, privateKey: undefined })));
+function safeServer(doc: Record<string, unknown>) {
+  const { password: _p, privateKey: _k, ...rest } = doc;
+  return rest;
+}
+
+router.get("/servers", async (_req, res): Promise<void> => {
+  const servers = await Server.find().sort({ createdAt: -1 });
+  res.json(servers.map((s) => safeServer(s.toObject() as Record<string, unknown>)));
 });
 
 router.post("/servers", async (req, res): Promise<void> => {
@@ -26,9 +30,9 @@ router.post("/servers", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-
-  const [server] = await db.insert(serversTable).values(parsed.data).returning();
-  res.status(201).json({ ...server, password: undefined, privateKey: undefined });
+  const id = await nextId("servers");
+  const server = await Server.create({ id, ...parsed.data, createdAt: new Date(), updatedAt: new Date() });
+  res.status(201).json(safeServer(server.toObject() as Record<string, unknown>));
 });
 
 router.get("/servers/:id", async (req, res): Promise<void> => {
@@ -37,14 +41,12 @@ router.get("/servers/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, params.data.id));
+  const server = await Server.findOne({ id: params.data.id });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
-
-  res.json({ ...server, password: undefined, privateKey: undefined });
+  res.json(safeServer(server.toObject() as Record<string, unknown>));
 });
 
 router.patch("/servers/:id", async (req, res): Promise<void> => {
@@ -53,20 +55,21 @@ router.patch("/servers/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
   const parsed = UpdateServerBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-
-  const [server] = await db.update(serversTable).set(parsed.data).where(eq(serversTable.id, params.data.id)).returning();
+  const server = await Server.findOneAndUpdate(
+    { id: params.data.id },
+    { ...parsed.data, updatedAt: new Date() },
+    { new: true }
+  );
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
-
-  res.json({ ...server, password: undefined, privateKey: undefined });
+  res.json(safeServer(server.toObject() as Record<string, unknown>));
 });
 
 router.delete("/servers/:id", async (req, res): Promise<void> => {
@@ -75,13 +78,11 @@ router.delete("/servers/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [server] = await db.delete(serversTable).where(eq(serversTable.id, params.data.id)).returning();
+  const server = await Server.findOneAndDelete({ id: params.data.id });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
-
   res.sendStatus(204);
 });
 
@@ -91,31 +92,37 @@ router.post("/servers/:id/test-connection", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, params.data.id));
+  const server = await Server.findOne({ id: params.data.id });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const s = server.toObject() as Record<string, unknown>;
 
   const result = await testSshConnection({
-    host: server.host,
-    port: server.port,
-    username: server.username,
-    password: server.password,
-    privateKey: server.privateKey,
+    host: s.host as string,
+    port: s.port as number,
+    username: s.username as string,
+    password: s.password as string,
+    privateKey: s.privateKey as string | null,
   });
 
-  await db.update(serversTable)
-    .set({ status: result.success ? "connected" : "disconnected" })
-    .where(eq(serversTable.id, server.id));
+  await Server.findOneAndUpdate(
+    { id: s.id },
+    { status: result.success ? "connected" : "disconnected", updatedAt: new Date() }
+  );
 
-  await db.insert(activityTable).values({
-    serverId: server.id,
+  const actId = await nextId("activity");
+  await Activity.create({
+    id: actId,
+    serverId: s.id,
     type: "connection_test",
     status: result.success ? "success" : "failure",
-    message: result.success ? `Connection to ${server.host} successful` : `Connection to ${server.host} failed`,
+    message: result.success
+      ? `Connection to ${s.host} successful`
+      : `Connection to ${s.host} failed`,
     details: result.output ?? result.message,
+    createdAt: new Date(),
   });
 
   res.json(result);
@@ -127,12 +134,12 @@ router.post("/servers/:id/install-nginx", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, params.data.id));
+  const server = await Server.findOne({ id: params.data.id });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const s = server.toObject() as Record<string, unknown>;
 
   const installScript = `
     export DEBIAN_FRONTEND=noninteractive && \
@@ -144,21 +151,24 @@ router.post("/servers/:id/install-nginx", async (req, res): Promise<void> => {
   `.trim();
 
   const result = await runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey as string | null },
     installScript,
     120000
   );
 
   if (result.success) {
-    await db.update(serversTable).set({ nginxInstalled: true }).where(eq(serversTable.id, server.id));
+    await Server.findOneAndUpdate({ id: s.id }, { nginxInstalled: true, updatedAt: new Date() });
   }
 
-  await db.insert(activityTable).values({
-    serverId: server.id,
+  const actId = await nextId("activity");
+  await Activity.create({
+    id: actId,
+    serverId: s.id,
     type: "nginx_install",
     status: result.success ? "success" : "failure",
     message: result.success ? "Nginx installed successfully" : "Nginx installation failed",
     details: result.output,
+    createdAt: new Date(),
   });
 
   res.json(result);
@@ -170,12 +180,12 @@ router.get("/servers/:id/stats", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-
-  const [server] = await db.select().from(serversTable).where(eq(serversTable.id, params.data.id));
+  const server = await Server.findOne({ id: params.data.id });
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
+  const s = server.toObject() as Record<string, unknown>;
 
   const statsCmd = `
     echo "CPU:$(top -bn1 | grep 'Cpu(s)' | awk '{print $2+$4}')" && \
@@ -185,7 +195,7 @@ router.get("/servers/:id/stats", async (req, res): Promise<void> => {
   `.trim();
 
   const result = await runSshCommand(
-    { host: server.host, port: server.port, username: server.username, password: server.password, privateKey: server.privateKey },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey as string | null },
     statsCmd,
     20000
   );
