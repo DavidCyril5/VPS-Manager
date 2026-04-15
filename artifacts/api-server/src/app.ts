@@ -1,9 +1,13 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import path from "path";
+import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { verifyToken } from "./routes/auth";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app: Express = express();
 
@@ -43,5 +47,14 @@ app.use("/api", (req: Request, res: Response, next: NextFunction): void => {
 });
 
 app.use("/api", router);
+
+// Serve built frontend in production
+if (process.env["NODE_ENV"] === "production") {
+  const staticDir = path.resolve(__dirname, "../../vps-manager/dist/public");
+  app.use(express.static(staticDir));
+  app.get("*", (_req: Request, res: Response) => {
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+}
 
 export default app;
