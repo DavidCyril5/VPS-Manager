@@ -24,15 +24,20 @@ function sanitizeSite(doc: Record<string, unknown>) {
 }
 
 function nodeAutoBuild(deployPath: string): string {
-  // Detect PM from lock files; install PM if missing (and add npm global bin to PATH); install deps; run build if script exists
-  const installPm = `command -v $PM >/dev/null 2>&1 || npm install -g $PM; export PATH="$(npm config get prefix)/bin:$PATH"`;
-  return (
-    `cd ${deployPath} && ` +
-    `if [ -f "pnpm-lock.yaml" ]; then PM="pnpm"; elif [ -f "yarn.lock" ]; then PM="yarn"; else PM="npm"; fi && ` +
-    `${installPm} && ` +
-    `$PM install && ` +
-    `if node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)" 2>/dev/null; then $PM run build; fi`
-  );
+  // Must use semicolons inside if/elif/else — joining with && breaks elif/else syntax
+  const hasBuildScript = `node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)" 2>/dev/null`;
+  const detectPm =
+    `if [ -f "pnpm-lock.yaml" ]; then ` +
+      `command -v pnpm >/dev/null 2>&1 || npm install -g pnpm; PMCMD="$(dirname $(which npm))/pnpm"; ` +
+    `elif [ -f "yarn.lock" ]; then ` +
+      `command -v yarn >/dev/null 2>&1 || npm install -g yarn; PMCMD="$(dirname $(which npm))/yarn"; ` +
+    `else PMCMD="npm"; fi`;
+  return [
+    `cd ${deployPath}`,
+    detectPm,
+    `$PMCMD install`,
+    `if ${hasBuildScript}; then $PMCMD run build; fi`,
+  ].join(" && ");
 }
 
 router.get("/sites", async (_req, res): Promise<void> => {
