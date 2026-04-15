@@ -61,7 +61,7 @@ export default function Servers() {
   function handleDelete(id: number) {
     if (!confirm("Remove this server?")) return;
     deleteServer.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });
@@ -74,7 +74,7 @@ export default function Servers() {
 
   function handleTest(id: number) {
     testConn.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });
@@ -92,7 +92,7 @@ export default function Servers() {
   function handleInstallNginx(id: number) {
     toast({ title: "Installing Nginx...", description: "This may take a minute." });
     installNginx.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });

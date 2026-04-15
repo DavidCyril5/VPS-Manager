@@ -76,7 +76,7 @@ export default function Sites() {
   function handleDeploy(id: number) {
     toast({ title: "Deploying...", description: "This may take a moment." });
     deploySite.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
@@ -93,7 +93,7 @@ export default function Sites() {
   function handleSsl(id: number) {
     toast({ title: "Installing SSL...", description: "This may take a moment." });
     installSsl.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
@@ -110,7 +110,7 @@ export default function Sites() {
   function handleDelete(id: number) {
     if (!confirm("Remove this site?")) return;
     deleteSite.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });

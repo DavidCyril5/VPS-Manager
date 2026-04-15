@@ -48,7 +48,7 @@ export default function ServerDetail() {
 
   function handleTest() {
     testConn.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getGetServerQueryKey(id) });
@@ -66,7 +66,7 @@ export default function ServerDetail() {
   function handleNginx() {
     toast({ title: "Installing Nginx...", description: "This may take a minute." });
     installNginx.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getGetServerQueryKey(id) });

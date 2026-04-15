@@ -22,7 +22,7 @@ function ZoneManager({ configId, serverIp }: { configId: number; serverIp?: stri
   function handleDns(e: React.FormEvent) {
     e.preventDefault();
     createDns.mutate(
-      { params: { id: configId }, data: dnsForm },
+      { id: configId, data: dnsForm },
       {
         onSuccess: (result) => {
           toast({
@@ -136,7 +136,7 @@ export default function CloudflarePage() {
   function handleDelete(id: number) {
     if (!confirm("Remove this Cloudflare account?")) return;
     deleteConfig.mutate(
-      { params: { id } },
+      { id },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListCloudflareConfigsQueryKey() });
