@@ -84,6 +84,18 @@ const CloudflareConfigSchema = new Schema(
   baseOpts
 );
 
+const GitTokenSchema = new Schema(
+  {
+    id: { type: Number, unique: true, index: true },
+    label: String,
+    host: { type: String, default: "github.com" },
+    token: String,
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  baseOpts
+);
+
 const ActivitySchema = new Schema(
   {
     id: { type: Number, unique: true, index: true },
@@ -101,6 +113,7 @@ const ActivitySchema = new Schema(
 export const Server = model("Server", ServerSchema);
 export const Site = model("Site", SiteSchema);
 export const CloudflareConfig = model("CloudflareConfig", CloudflareConfigSchema);
+export const GitToken = model("GitToken", GitTokenSchema);
 export const Activity = model("Activity", ActivitySchema);
 
 async function repairMissingIds(): Promise<void> {

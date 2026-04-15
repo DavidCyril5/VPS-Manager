@@ -4,6 +4,7 @@ import serversRouter from "./servers";
 import sitesRouter from "./sites";
 import cloudflareRouter from "./cloudflare";
 import activityRouter from "./activity";
+import gitTokensRouter from "./gitTokens";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(serversRouter);
 router.use(sitesRouter);
 router.use(cloudflareRouter);
 router.use(activityRouter);
+router.use(gitTokensRouter);
 
 export default router;

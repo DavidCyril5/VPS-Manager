@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListSites,
@@ -9,11 +9,36 @@ import {
   useInstallSsl,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock } from "lucide-react";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
 import { NginxConfigModal } from "@/components/nginx-config-modal";
+
+interface GitToken { id: number; label: string; host: string; }
+
+function useGitTokens() {
+  const [tokens, setTokens] = useState<GitToken[]>([]);
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+  function load() {
+    fetch(`${base}/api/git-tokens`).then((r) => r.json()).then(setTokens).catch(() => {});
+  }
+  useEffect(() => { load(); }, []);
+  async function saveToken(label: string, host: string, token: string) {
+    await fetch(`${base}/api/git-tokens`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, host, token }) });
+    load();
+  }
+  async function deleteToken(id: number) {
+    await fetch(`${base}/api/git-tokens/${id}`, { method: "DELETE" });
+    load();
+  }
+  async function resolveToken(id: number): Promise<string> {
+    const r = await fetch(`${base}/api/git-tokens/${id}/resolve`);
+    const d = await r.json() as { token: string };
+    return d.token;
+  }
+  return { tokens, saveToken, deleteToken, resolveToken };
+}
 
 const statusColors: Record<string, string> = {
   active: "bg-emerald-900/40 text-emerald-400 border-emerald-800/50",
@@ -59,11 +84,15 @@ export default function Sites() {
   const deploySite = useDeploySite();
   const installSsl = useInstallSsl();
 
+  const { tokens: gitTokens, saveToken, deleteToken, resolveToken } = useGitTokens();
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
   const [nginxModal, setNginxModal] = useState<{ siteId: number; domain: string } | null>(null);
   const [webhookVisible, setWebhookVisible] = useState<Set<number>>(new Set());
+  const [saveTokenLabel, setSaveTokenLabel] = useState("");
+  const [showSaveToken, setShowSaveToken] = useState(false);
+  const [showManageTokens, setShowManageTokens] = useState(false);
 
   const [form, setForm] = useState({
     serverId: 0,
@@ -76,6 +105,21 @@ export default function Sites() {
     siteType: "static" as const,
     autoSync: false,
   });
+
+  async function handleSelectSavedToken(id: number) {
+    if (!id) return;
+    const token = await resolveToken(id);
+    setForm((f) => ({ ...f, repoToken: token }));
+  }
+
+  async function handleSaveToken() {
+    if (!form.repoToken || !saveTokenLabel) return;
+    const host = form.repoUrl.includes("gitlab") ? "gitlab.com" : form.repoUrl.includes("bitbucket") ? "bitbucket.org" : "github.com";
+    await saveToken(saveTokenLabel, host, form.repoToken);
+    setSaveTokenLabel("");
+    setShowSaveToken(false);
+    toast({ title: "Token saved" });
+  }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value, type } = e.target;
@@ -225,9 +269,39 @@ export default function Sites() {
               <label className="block text-sm text-muted-foreground mb-1">Repo URL (optional)</label>
               <input name="repoUrl" value={form.repoUrl} onChange={handleChange} placeholder="https://github.com/user/repo" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
-            <div>
+            <div className="space-y-2">
               <label className="block text-sm text-muted-foreground mb-1">Access Token (optional)</label>
-              <input name="repoToken" type="password" value={form.repoToken} onChange={handleChange} placeholder="ghp_xxxxx" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              {gitTokens.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={(e) => { if (e.target.value) handleSelectSavedToken(Number(e.target.value)); }}
+                  className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">— Use saved token —</option>
+                  {gitTokens.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label} ({t.host})</option>
+                  ))}
+                </select>
+              )}
+              <div className="flex gap-2">
+                <input name="repoToken" type="password" value={form.repoToken} onChange={handleChange} placeholder="ghp_xxxxx or select saved token above" className="flex-1 rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                {form.repoToken && (
+                  <button type="button" onClick={() => setShowSaveToken(!showSaveToken)} className="flex items-center gap-1 text-xs bg-muted px-3 py-2 rounded-lg hover:opacity-80" title="Save token for later">
+                    <Save className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              {showSaveToken && (
+                <div className="flex gap-2">
+                  <input
+                    value={saveTokenLabel}
+                    onChange={(e) => setSaveTokenLabel(e.target.value)}
+                    placeholder="Label (e.g. My GitHub)"
+                    className="flex-1 rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <button type="button" onClick={handleSaveToken} className="text-xs bg-primary text-primary-foreground px-3 py-2 rounded-lg hover:opacity-90">Save</button>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Build Command (optional)</label>
@@ -247,6 +321,31 @@ export default function Sites() {
             </button>
           </div>
         </form>
+      )}
+
+      {gitTokens.length > 0 && (
+        <div className="rounded-xl border border-border bg-card px-6 py-4">
+          <button
+            onClick={() => setShowManageTokens(!showManageTokens)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Key className="h-4 w-4" />
+            Saved Git Tokens ({gitTokens.length})
+            <span className="text-xs">{showManageTokens ? "▲" : "▼"}</span>
+          </button>
+          {showManageTokens && (
+            <div className="mt-3 space-y-2">
+              {gitTokens.map((t) => (
+                <div key={t.id} className="flex items-center justify-between bg-background rounded-lg px-3 py-2 border border-border">
+                  <span className="text-sm">{t.label} <span className="text-xs text-muted-foreground">({t.host})</span></span>
+                  <button onClick={() => deleteToken(t.id)} className="p-1 text-muted-foreground hover:text-red-400 transition-colors">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {isLoading ? (
