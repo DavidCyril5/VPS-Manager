@@ -23,6 +23,16 @@ function sanitizeSite(doc: Record<string, unknown>) {
   return { ...doc, repoToken: doc.repoToken ? "***" : null };
 }
 
+function nodeAutoBuild(deployPath: string): string {
+  // Single-line bash: detect package manager from lock files, install, then run build only if script exists
+  return (
+    `cd ${deployPath} && ` +
+    `if [ -f "pnpm-lock.yaml" ]; then PM="pnpm"; elif [ -f "yarn.lock" ]; then PM="yarn"; else PM="npm"; fi && ` +
+    `$PM install && ` +
+    `if node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)" 2>/dev/null; then $PM run build; fi`
+  );
+}
+
 router.get("/sites", async (_req, res): Promise<void> => {
   const sites = await Site.find().sort({ createdAt: -1 });
   res.json(sites.map((s) => sanitizeSite(s.toObject() as Record<string, unknown>)));
@@ -167,7 +177,7 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
   const domain = siteData.domain as string;
 
   const buildCommand = (siteData.buildCommand as string | null)
-    || (siteType === "nodejs" ? `npm install && npm run build --if-present`
+    || (siteType === "nodejs" ? nodeAutoBuild(deployPath)
       : siteType === "python" ? `[ -f requirements.txt ] && pip install -r requirements.txt || true`
       : null);
 
@@ -489,7 +499,7 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
   const deployPath = siteData.deployPath as string;
   const siteTypeW = siteData.siteType as string;
   const buildCommand = (siteData.buildCommand as string | null)
-    || (siteTypeW === "nodejs" ? `npm install && npm run build --if-present`
+    || (siteTypeW === "nodejs" ? nodeAutoBuild(deployPath)
       : siteTypeW === "python" ? `[ -f requirements.txt ] && pip install -r requirements.txt || true`
       : null);
 

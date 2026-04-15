@@ -478,7 +478,7 @@ export default function Sites() {
               </div>
               <input name="buildCommand" value={form.buildCommand} onChange={handleChange} placeholder={buildSuggestions[form.siteType] || "e.g. npm run build"} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               {form.siteType === "nodejs" && !form.buildCommand && (
-                <p className="text-xs text-muted-foreground mt-1">Leave blank — Node.js sites auto-run <code className="bg-muted px-1 rounded">npm install && npm run build --if-present</code></p>
+                <p className="text-xs text-muted-foreground mt-1">Leave blank — auto-detects <code className="bg-muted px-1 rounded">pnpm</code> / <code className="bg-muted px-1 rounded">yarn</code> / <code className="bg-muted px-1 rounded">npm</code> from lock files, installs deps, and runs the build script if one exists in package.json</p>
               )}
               {form.siteType === "python" && !form.buildCommand && (
                 <p className="text-xs text-muted-foreground mt-1">Leave blank — Python sites auto-run <code className="bg-muted px-1 rounded">pip install -r requirements.txt</code> if it exists</p>
