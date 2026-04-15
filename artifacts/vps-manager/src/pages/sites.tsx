@@ -490,14 +490,15 @@ export default function Sites() {
                     <Rocket className="h-3 w-3" />
                     Deploy
                   </button>
-                  {!site.sslInstalled && site.status === "active" && (
+                  {site.status === "active" && (
                     <button
                       onClick={() => handleSsl(site.id)}
                       disabled={installSsl.isPending}
                       className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      title={site.sslInstalled ? "Reinstall / renew SSL certificate" : "Install SSL certificate"}
                     >
                       <ShieldCheck className="h-3 w-3" />
-                      SSL
+                      {site.sslInstalled ? "Renew SSL" : "SSL"}
                     </button>
                   )}
                   <button
