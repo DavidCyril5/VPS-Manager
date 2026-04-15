@@ -59,6 +59,8 @@ const SiteSchema = new Schema(
     deployPath: String,
     webRoot: { type: String, default: null },
     buildCommand: { type: String, default: null },
+    startCommand: { type: String, default: null },
+    port: { type: Number, default: null },
     siteType: { type: String, default: "static" },
     status: { type: String, default: "stopped" },
     autoSync: { type: Boolean, default: false },

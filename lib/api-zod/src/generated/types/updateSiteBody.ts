@@ -14,8 +14,14 @@ export interface UpdateSiteBody {
   repoUrl?: string | null;
   /** @nullable */
   repoToken?: string | null;
+  deployPath?: string;
+  /** @nullable */
+  webRoot?: string | null;
   /** @nullable */
   buildCommand?: string | null;
+  /** @nullable */
+  startCommand?: string | null;
+  port?: number;
   siteType?: UpdateSiteBodySiteType;
   autoSync?: boolean;
 }

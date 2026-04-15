@@ -173,7 +173,10 @@ export const CreateSiteBody = zod.object({
   repoUrl: zod.string().nullish(),
   repoToken: zod.string().nullish(),
   deployPath: zod.string(),
+  webRoot: zod.string().nullish(),
   buildCommand: zod.string().nullish(),
+  startCommand: zod.string().nullish(),
+  port: zod.number().optional(),
   siteType: zod.enum(["static", "nodejs", "php", "python"]),
   autoSync: zod.boolean().optional(),
 });
@@ -217,7 +220,11 @@ export const UpdateSiteBody = zod.object({
   domain: zod.string().optional(),
   repoUrl: zod.string().nullish(),
   repoToken: zod.string().nullish(),
+  deployPath: zod.string().optional(),
+  webRoot: zod.string().nullish(),
   buildCommand: zod.string().nullish(),
+  startCommand: zod.string().nullish(),
+  port: zod.number().optional(),
   siteType: zod.enum(["static", "nodejs", "php", "python"]).optional(),
   autoSync: zod.boolean().optional(),
 });

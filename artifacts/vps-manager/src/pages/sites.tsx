@@ -94,7 +94,7 @@ export default function Sites() {
   const [editTarget, setEditTarget] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({
     name: "", domain: "", repoUrl: "", repoToken: "",
-    deployPath: "", webRoot: "", buildCommand: "", siteType: "static", autoSync: false,
+    deployPath: "", webRoot: "", buildCommand: "", startCommand: "", port: 3000, siteType: "static", autoSync: false,
   });
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
@@ -117,6 +117,8 @@ export default function Sites() {
     deployPath: "/var/www/html",
     webRoot: "",
     buildCommand: "",
+    startCommand: "",
+    port: 3000,
     siteType: "static" as const,
     autoSync: false,
   });
@@ -137,17 +139,20 @@ export default function Sites() {
   }
 
   function openEdit(site: typeof sites extends (infer T)[] | undefined ? T : never) {
+    const s = site as unknown as Record<string, unknown>;
     setEditTarget(site.id);
     setEditForm({
       name: site.name ?? "",
       domain: site.domain ?? "",
-      repoUrl: (site as unknown as Record<string, string>).repoUrl ?? "",
+      repoUrl: (s.repoUrl as string) ?? "",
       repoToken: "",
-      deployPath: (site as unknown as Record<string, string>).deployPath ?? "",
-      webRoot: (site as unknown as Record<string, string>).webRoot ?? "",
-      buildCommand: (site as unknown as Record<string, string>).buildCommand ?? "",
+      deployPath: (s.deployPath as string) ?? "",
+      webRoot: (s.webRoot as string) ?? "",
+      buildCommand: (s.buildCommand as string) ?? "",
+      startCommand: (s.startCommand as string) ?? "",
+      port: (s.port as number) || 3000,
       siteType: site.siteType ?? "static",
-      autoSync: (site as unknown as Record<string, boolean>).autoSync ?? false,
+      autoSync: (s.autoSync as boolean) ?? false,
     });
   }
 
@@ -155,7 +160,7 @@ export default function Sites() {
     const { name, value, type } = e.target;
     setEditForm((f) => ({
       ...f,
-      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : value,
+      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : name === "port" ? Number(value) : value,
     }));
   }
 
@@ -170,6 +175,8 @@ export default function Sites() {
           repoToken: editForm.repoToken || null,
           webRoot: editForm.webRoot || null,
           buildCommand: editForm.buildCommand || null,
+          startCommand: editForm.startCommand || null,
+          port: editForm.port || undefined,
         },
       },
       {
@@ -234,7 +241,7 @@ export default function Sites() {
     const { name, value, type } = e.target;
     const checked = type === "checkbox" ? (e.target as HTMLInputElement).checked : undefined;
     setForm((f) => {
-      const updated = { ...f, [name]: checked !== undefined ? checked : name === "serverId" ? Number(value) : value };
+      const updated = { ...f, [name]: checked !== undefined ? checked : (name === "serverId" || name === "port") ? Number(value) : value };
       if (name === "name" && value) {
         const slug = slugify(value);
         if (defaultPaths.includes(f.deployPath) || f.deployPath === `/var/www/${slugify(f.name)}`) {
@@ -258,6 +265,8 @@ export default function Sites() {
           repoToken: form.repoToken || null,
           webRoot: form.webRoot || null,
           buildCommand: form.buildCommand || null,
+          startCommand: form.startCommand || null,
+          port: form.port || undefined,
         },
       },
       {
@@ -486,6 +495,21 @@ export default function Sites() {
                 <p className="text-xs text-muted-foreground mt-1">Leave blank — Python sites auto-run <code className="bg-muted px-1 rounded">pip install -r requirements.txt</code> if it exists</p>
               )}
             </div>
+            {(form.siteType === "nodejs" || form.siteType === "python") && (<>
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">
+                  App Port <span className="opacity-60 text-xs">(port your app listens on)</span>
+                </label>
+                <input name="port" type="number" value={form.port} onChange={handleChange} placeholder="3000" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">
+                  Start Command <span className="opacity-60 text-xs">(how pm2 starts your app)</span>
+                </label>
+                <input name="startCommand" value={form.startCommand} onChange={handleChange} placeholder={form.siteType === "python" ? "gunicorn app:app" : "npm run start"} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                <p className="text-xs text-muted-foreground mt-1">Leave blank to use <code className="bg-muted px-1 rounded">{form.siteType === "python" ? "gunicorn app:app" : "npm run start"}</code> automatically</p>
+              </div>
+            </>)}
             <div className="col-span-2 flex items-center gap-2">
               <input name="autoSync" type="checkbox" checked={form.autoSync} onChange={handleChange} id="autoSync" className="rounded" />
               <label htmlFor="autoSync" className="text-sm">Enable auto-sync from repo</label>
@@ -678,6 +702,20 @@ export default function Sites() {
                         <option value="python">Python</option>
                       </select>
                     </div>
+                    {(editForm.siteType === "nodejs" || editForm.siteType === "python") && (<>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">
+                          App Port <span className="opacity-60">(port your app listens on)</span>
+                        </label>
+                        <input name="port" type="number" value={editForm.port} onChange={handleEditChange} placeholder="3000" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">
+                          Start Command <span className="opacity-60">(pm2 start command)</span>
+                        </label>
+                        <input name="startCommand" value={editForm.startCommand} onChange={handleEditChange} placeholder={editForm.siteType === "python" ? "gunicorn app:app" : "npm run start"} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                      </div>
+                    </>)}
                     <div className="flex items-center gap-2 pt-4">
                       <input name="autoSync" type="checkbox" checked={editForm.autoSync} onChange={handleEditChange} id={`autoSync-${site.id}`} className="rounded" />
                       <label htmlFor={`autoSync-${site.id}`} className="text-sm">Enable auto-sync</label>

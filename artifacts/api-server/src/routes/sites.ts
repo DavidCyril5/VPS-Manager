@@ -40,6 +40,117 @@ function nodeAutoBuild(deployPath: string): string {
   ].join(" && ");
 }
 
+interface DeployParts {
+  deployScript: string;
+  pm2Script: string | null;
+  setupNginx: string;
+}
+
+function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
+  const repoUrl = siteData.repoUrl as string | null;
+  const repoToken = siteData.repoToken as string | null;
+  const deployPath = siteData.deployPath as string;
+  const siteType = siteData.siteType as string;
+  const domain = siteData.domain as string;
+  const appPort = (siteData.port as number | null) || 3000;
+  const rawWebRoot = siteData.webRoot as string | null;
+  const isServer = siteType === "nodejs" || siteType === "python";
+
+  // --- Build command ---
+  const buildCommand = (siteData.buildCommand as string | null)
+    || (siteType === "nodejs" ? nodeAutoBuild(deployPath)
+      : siteType === "python" ? `cd ${deployPath} && pip install -r requirements.txt`
+      : null);
+
+  // --- Git/clone script ---
+  let deployScript = "";
+  if (repoUrl) {
+    const cloneUrl = repoToken
+      ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
+      : repoUrl;
+    const gitBlock = [
+      `if [ -d "${deployPath}/.git" ]; then`,
+      `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
+      `else`,
+      `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
+      `fi`,
+    ].join("\n");
+    deployScript = buildCommand
+      ? `${gitBlock} && cd ${deployPath} && ${buildCommand}`
+      : gitBlock;
+  } else {
+    deployScript = `mkdir -p ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
+  }
+
+  // --- pm2 process management (nodejs / python) ---
+  let pm2Script: string | null = null;
+  if (isServer) {
+    const defaultStart = siteType === "python"
+      ? `gunicorn app:app --bind 0.0.0.0:${appPort} --daemon`
+      : `npm run start`;
+    const startCommand = (siteData.startCommand as string | null) || defaultStart;
+    const pm2Name = domain.replace(/[^a-zA-Z0-9]/g, "-");
+    pm2Script = [
+      `command -v pm2 >/dev/null 2>&1 || npm install -g pm2`,
+      `cd ${deployPath}`,
+      // restart if already running, otherwise start fresh
+      `pm2 describe "${pm2Name}" >/dev/null 2>&1`
+        + ` && pm2 restart "${pm2Name}" --update-env`
+        + ` || PORT=${appPort} pm2 start "${startCommand}" --name "${pm2Name}"`,
+      `pm2 save`,
+    ].join(" && ");
+  }
+
+  // --- Nginx config ---
+  let nginxConfig: string;
+  if (isServer) {
+    nginxConfig = [
+      `server {`,
+      `    listen 80;`,
+      `    server_name ${domain};`,
+      ``,
+      `    location / {`,
+      `        proxy_pass http://localhost:${appPort};`,
+      `        proxy_http_version 1.1;`,
+      `        proxy_set_header Upgrade $http_upgrade;`,
+      `        proxy_set_header Connection 'upgrade';`,
+      `        proxy_set_header Host $host;`,
+      `        proxy_set_header X-Real-IP $remote_addr;`,
+      `        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`,
+      `        proxy_set_header X-Forwarded-Proto $scheme;`,
+      `        proxy_cache_bypass $http_upgrade;`,
+      `    }`,
+      `}`,
+    ].join("\n");
+  } else {
+    const nginxRoot = rawWebRoot
+      ? (rawWebRoot.startsWith("/") ? rawWebRoot : `${deployPath}/${rawWebRoot}`)
+      : deployPath;
+    nginxConfig = [
+      `server {`,
+      `    listen 80;`,
+      `    server_name ${domain};`,
+      `    root ${nginxRoot};`,
+      `    index index.html index.htm;`,
+      ``,
+      `    location / {`,
+      `        try_files $uri $uri/ =404;`,
+      `    }`,
+      `}`,
+    ].join("\n");
+  }
+
+  const nginxConfigB64 = Buffer.from(nginxConfig).toString("base64");
+  const setupNginx = [
+    `echo '${nginxConfigB64}' | base64 -d > /etc/nginx/sites-available/${domain}`,
+    `rm -f /etc/nginx/sites-enabled/${domain}`,
+    `ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}`,
+    `nginx -t && systemctl reload nginx`,
+  ].join(" && ");
+
+  return { deployScript, pm2Script, setupNginx };
+}
+
 router.get("/sites", async (_req, res): Promise<void> => {
   const sites = await Site.find().sort({ createdAt: -1 });
   res.json(sites.map((s) => sanitizeSite(s.toObject() as Record<string, unknown>)));
@@ -108,6 +219,7 @@ router.delete("/sites/:id", async (req, res): Promise<void> => {
   const siteData = site.toObject() as Record<string, unknown>;
   const domain = siteData.domain as string;
   const deployPath = siteData.deployPath as string;
+  const siteType = siteData.siteType as string;
 
   const server = await Server.findOne({ id: siteData.serverId });
   if (server) {
@@ -119,8 +231,12 @@ router.delete("/sites/:id", async (req, res): Promise<void> => {
       password: serverData.password as string,
       privateKey: serverData.privateKey as string | null,
     };
+    const pm2Name = domain.replace(/[^a-zA-Z0-9]/g, "-");
+    const pm2Cleanup = (siteType === "nodejs" || siteType === "python")
+      ? `pm2 delete "${pm2Name}" 2>/dev/null || true && pm2 save && `
+      : "";
     const cleanupScript = [
-      `rm -f /etc/nginx/sites-enabled/${domain}`,
+      `${pm2Cleanup}rm -f /etc/nginx/sites-enabled/${domain}`,
       `rm -f /etc/nginx/sites-available/${domain}`,
       `nginx -t && systemctl reload nginx`,
       `rm -rf ${deployPath}`,
@@ -177,64 +293,13 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
 
   await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
 
-  const repoUrl = siteData.repoUrl as string | null;
-  const repoToken = siteData.repoToken as string | null;
-  const deployPath = siteData.deployPath as string;
-  const siteType = siteData.siteType as string;
   const domain = siteData.domain as string;
+  const { deployScript, pm2Script, setupNginx } = buildDeployParts(siteData);
+  const parts = [deployScript];
+  if (pm2Script) parts.push(pm2Script);
+  parts.push(setupNginx);
+  const fullScript = parts.join(" && ");
 
-  const buildCommand = (siteData.buildCommand as string | null)
-    || (siteType === "nodejs" ? nodeAutoBuild(deployPath)
-      : siteType === "python" ? `[ -f requirements.txt ] && pip install -r requirements.txt || true`
-      : null);
-
-  let deployScript = "";
-  if (repoUrl) {
-    const cloneUrl = repoToken
-      ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
-      : repoUrl;
-    const gitBlock = [
-      `if [ -d "${deployPath}/.git" ]; then`,
-      `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
-      `else`,
-      `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
-      `fi`,
-    ].join("\n");
-    deployScript = buildCommand
-      ? `${gitBlock} && cd ${deployPath} && ${buildCommand}`
-      : gitBlock;
-  } else {
-    deployScript = `mkdir -p ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
-  }
-
-  const rawWebRoot = siteData.webRoot as string | null;
-  const nginxRoot = rawWebRoot
-    ? (rawWebRoot.startsWith("/") ? rawWebRoot : `${deployPath}/${rawWebRoot}`)
-    : deployPath;
-
-  const nginxConfig = [
-    `server {`,
-    `    listen 80;`,
-    `    server_name ${domain};`,
-    `    root ${nginxRoot};`,
-    `    index index.html index.htm;`,
-    ``,
-    `    location / {`,
-    `        try_files $uri $uri/ =404;`,
-    `    }`,
-    `}`,
-  ].join("\n");
-
-  const nginxConfigB64 = Buffer.from(nginxConfig).toString("base64");
-
-  const setupNginx = [
-    `echo '${nginxConfigB64}' | base64 -d > /etc/nginx/sites-available/${domain}`,
-    `rm -f /etc/nginx/sites-enabled/${domain}`,
-    `ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}`,
-    `nginx -t && systemctl reload nginx`,
-  ].join(" && ");
-
-  const fullScript = `${deployScript} && ${setupNginx}`;
   const sshOpts = {
     host: serverData.host as string,
     port: serverData.port as number,
@@ -243,7 +308,7 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
     privateKey: serverData.privateKey as string | null,
   };
 
-  const result = await runSshCommand(sshOpts, fullScript, 120000);
+  const result = await runSshCommand(sshOpts, fullScript, 180000);
   const newStatus = result.success ? "active" : "failed";
 
   await Site.findOneAndUpdate(
@@ -333,63 +398,16 @@ router.get("/sites/:id/deploy/stream", async (req, res): Promise<void> => {
   await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
   sendEvent({ type: "status", text: "Connecting to server..." });
 
-  const repoUrl = siteData.repoUrl as string | null;
-  const repoToken = siteData.repoToken as string | null;
-  const deployPath = siteData.deployPath as string;
-  const siteType = siteData.siteType as string;
   const domain = siteData.domain as string;
+  const siteType = siteData.siteType as string;
+  const { deployScript, pm2Script, setupNginx } = buildDeployParts(siteData);
+  const parts = [deployScript];
+  if (pm2Script) parts.push(pm2Script);
+  parts.push(setupNginx);
+  const fullScript = parts.join(" && ");
 
-  const buildCommand = (siteData.buildCommand as string | null)
-    || (siteType === "nodejs" ? nodeAutoBuild(deployPath)
-      : siteType === "python" ? `[ -f requirements.txt ] && pip install -r requirements.txt || true`
-      : null);
+  if (pm2Script) sendEvent({ type: "status", text: `Starting ${siteType} app with pm2...` });
 
-  let deployScript = "";
-  if (repoUrl) {
-    const cloneUrl = repoToken
-      ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
-      : repoUrl;
-    const gitBlock = [
-      `if [ -d "${deployPath}/.git" ]; then`,
-      `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
-      `else`,
-      `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
-      `fi`,
-    ].join("\n");
-    deployScript = buildCommand
-      ? `${gitBlock} && cd ${deployPath} && ${buildCommand}`
-      : gitBlock;
-  } else {
-    deployScript = `mkdir -p ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
-  }
-
-  const rawWebRoot = siteData.webRoot as string | null;
-  const nginxRoot = rawWebRoot
-    ? (rawWebRoot.startsWith("/") ? rawWebRoot : `${deployPath}/${rawWebRoot}`)
-    : deployPath;
-
-  const nginxConfig = [
-    `server {`,
-    `    listen 80;`,
-    `    server_name ${domain};`,
-    `    root ${nginxRoot};`,
-    `    index index.html index.htm;`,
-    ``,
-    `    location / {`,
-    `        try_files $uri $uri/ =404;`,
-    `    }`,
-    `}`,
-  ].join("\n");
-
-  const nginxConfigB64 = Buffer.from(nginxConfig).toString("base64");
-  const setupNginx = [
-    `echo '${nginxConfigB64}' | base64 -d > /etc/nginx/sites-available/${domain}`,
-    `rm -f /etc/nginx/sites-enabled/${domain}`,
-    `ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}`,
-    `nginx -t && systemctl reload nginx`,
-  ].join(" && ");
-
-  const fullScript = `${deployScript} && ${setupNginx}`;
   const sshOpts = {
     host: serverData.host as string,
     port: serverData.port as number,
@@ -400,7 +418,7 @@ router.get("/sites/:id/deploy/stream", async (req, res): Promise<void> => {
 
   const result = await runSshCommandStream(sshOpts, fullScript, (chunk) => {
     sendEvent({ type: "log", text: chunk });
-  }, 120000);
+  }, 180000);
 
   const newStatus = result.success ? "active" : "failed";
   await Site.findOneAndUpdate(

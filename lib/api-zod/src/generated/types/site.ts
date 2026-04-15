@@ -19,7 +19,12 @@ export interface Site {
   repoToken?: string | null;
   deployPath: string;
   /** @nullable */
+  webRoot?: string | null;
+  /** @nullable */
   buildCommand?: string | null;
+  /** @nullable */
+  startCommand?: string | null;
+  port?: number;
   siteType: SiteSiteType;
   status: SiteStatus;
   sslInstalled: boolean;
