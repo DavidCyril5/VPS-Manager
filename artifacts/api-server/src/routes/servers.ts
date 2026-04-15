@@ -180,6 +180,58 @@ router.post("/servers/:id/install-nginx", async (req, res): Promise<void> => {
   res.json(result);
 });
 
+router.post("/servers/:id/install-node", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const server = await Server.findOne({ id });
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  const s = server.toObject() as Record<string, unknown>;
+
+  const script = `
+    export DEBIAN_FRONTEND=noninteractive && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    node -v && npm -v && \
+    echo "Node.js installed successfully"
+  `.trim();
+
+  const result = await runSshCommand(
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    script,
+    120000
+  );
+
+  await Activity.create({
+    id: await nextId("activity"),
+    serverId: s.id,
+    type: "node_install",
+    status: result.success ? "success" : "failure",
+    message: result.success ? "Node.js installed successfully" : "Node.js installation failed",
+    details: result.output,
+    createdAt: new Date(),
+  });
+
+  res.json(result);
+});
+
+router.get("/servers/:id/node-status", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const server = await Server.findOne({ id });
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  const s = server.toObject() as Record<string, unknown>;
+
+  const result = await runSshCommand(
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    "node -v && npm -v 2>&1",
+    15000
+  );
+
+  const installed = result.success && result.output.includes("v");
+  const version = result.output.match(/v(\d+\.\d+\.\d+)/)?.[1] ?? null;
+  res.json({ installed, version, output: result.output });
+});
+
 router.get("/servers/:id/nginx-status", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

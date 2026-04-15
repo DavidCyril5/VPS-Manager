@@ -61,6 +61,8 @@ async function getCfConfigsForSite(siteData: Record<string, unknown>) {
   return CloudflareConfig.find();
 }
 
+const ENSURE_NODE = `command -v npm >/dev/null 2>&1 || (curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs)`;
+
 function nodeAutoBuild(deployPath: string): string {
   // Must use semicolons inside if/elif/else — joining with && breaks elif/else syntax
   const hasBuildScript = `node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)" 2>/dev/null`;
@@ -71,6 +73,7 @@ function nodeAutoBuild(deployPath: string): string {
       `command -v yarn >/dev/null 2>&1 || npm install -g yarn; PMCMD="$(dirname $(which npm))/yarn"; ` +
     `else PMCMD="npm"; fi`;
   return [
+    ENSURE_NODE,
     `cd ${deployPath}`,
     detectPm,
     `$PMCMD install`,
@@ -139,6 +142,7 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       env: { PORT: String(appPort), NODE_ENV: "production" },
     });
     pm2Script = [
+      ENSURE_NODE,
       `command -v pm2 >/dev/null 2>&1 || npm install -g pm2`,
       `cd ${deployPath}`,
       `echo '${pm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`,

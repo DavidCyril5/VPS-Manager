@@ -43,11 +43,57 @@ export default function ServerDetail() {
   const { toast } = useToast();
   const [nginxLive, setNginxLive] = useState<{ installed: boolean; version: string | null } | null>(null);
   const [checkingNginx, setCheckingNginx] = useState(false);
+  const [installingNode, setInstallingNode] = useState(false);
+  const [nodeLive, setNodeLive] = useState<{ installed: boolean; version: string | null } | null>(null);
+  const [checkingNode, setCheckingNode] = useState(false);
 
   const { data: server, isLoading } = useGetServer(id, { query: { enabled: !!id } });
   const { data: stats, refetch: refetchStats, isFetching: fetchingStats } = useGetServerStats(id, { query: { enabled: !!id } });
   const testConn = useTestServerConnection();
   const installNginx = useInstallNginx();
+
+  async function handleNodeCheck() {
+    setCheckingNode(true);
+    try {
+      const token = localStorage.getItem("vpm-token");
+      const res = await fetch(`/api/servers/${id}/node-status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      setNodeLive({ installed: data.installed, version: data.version });
+      toast({
+        title: data.installed ? `Node.js is installed${data.version ? ` (v${data.version})` : ""}` : "Node.js is NOT installed",
+        variant: data.installed ? "default" : "destructive",
+      });
+    } catch {
+      toast({ title: "Check failed", variant: "destructive" });
+    } finally {
+      setCheckingNode(false);
+    }
+  }
+
+  async function handleInstallNode() {
+    setInstallingNode(true);
+    toast({ title: "Installing Node.js 20...", description: "This may take a minute." });
+    try {
+      const token = localStorage.getItem("vpm-token");
+      const res = await fetch(`/api/servers/${id}/install-node`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = await res.json();
+      setNodeLive({ installed: data.success, version: data.output?.match(/v(\d+\.\d+\.\d+)/)?.[1] ?? null });
+      toast({
+        title: data.success ? "Node.js installed successfully" : "Node.js installation failed",
+        description: data.success ? (data.output?.match(/v\d+\.\d+\.\d+/)?.[0] ?? "") : data.message,
+        variant: data.success ? "default" : "destructive",
+      });
+    } catch {
+      toast({ title: "Installation failed", variant: "destructive" });
+    } finally {
+      setInstallingNode(false);
+    }
+  }
 
   async function handleNginxCheck() {
     setCheckingNginx(true);
@@ -128,6 +174,14 @@ export default function ServerDetail() {
             Test Connection
           </button>
           <button
+            onClick={handleInstallNode}
+            disabled={installingNode}
+            className="flex items-center gap-2 bg-muted text-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            {installingNode ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cpu className="h-4 w-4" />}
+            {installingNode ? "Installing..." : "Install Node.js"}
+          </button>
+          <button
             onClick={handleNginx}
             disabled={installNginx.isPending}
             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
@@ -138,7 +192,7 @@ export default function ServerDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="text-sm text-muted-foreground mb-1">Status</div>
           <div className={`font-semibold capitalize ${server.status === "connected" ? "text-emerald-400" : server.status === "disconnected" ? "text-red-400" : "text-muted-foreground"}`}>
@@ -185,6 +239,41 @@ export default function ServerDetail() {
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="text-sm text-muted-foreground mb-1">Uptime</div>
           <div className="font-semibold">{stats?.uptime ?? "—"}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-sm text-muted-foreground">Node.js</div>
+            <button
+              onClick={handleNodeCheck}
+              disabled={checkingNode}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              title="Check if Node.js is installed"
+            >
+              {checkingNode ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Check
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            {nodeLive !== null && (
+              nodeLive.installed
+                ? <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                : <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+            )}
+            <div className={`font-semibold ${
+              nodeLive !== null
+                ? nodeLive.installed ? "text-emerald-400" : "text-red-400"
+                : "text-muted-foreground"
+            }`}>
+              {nodeLive !== null
+                ? nodeLive.installed
+                  ? nodeLive.version ? `v${nodeLive.version}` : "Installed ✓"
+                  : "Not installed"
+                : "Unknown"}
+            </div>
+          </div>
+          {nodeLive === null && (
+            <div className="text-xs text-muted-foreground mt-1">Click Check to verify live</div>
+          )}
         </div>
       </div>
 
