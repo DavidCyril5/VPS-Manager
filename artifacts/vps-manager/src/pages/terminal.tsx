@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useListServers } from "@workspace/api-client-react";
-import { Terminal as TerminalIcon, Server } from "lucide-react";
+import { Terminal as TerminalIcon, Server, Clipboard } from "lucide-react";
 
 export default function TerminalPage() {
   const { data: servers } = useListServers();
@@ -11,13 +11,18 @@ export default function TerminalPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const terminalRef = useRef<import("xterm").Terminal | null>(null);
   const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
+  const onDataRef = useRef<{ dispose: () => void } | null>(null);
 
   useEffect(() => {
     if (!termRef.current) return;
     if (terminalRef.current) return;
 
-    import("xterm").then(({ Terminal }) => {
-      import("@xterm/addon-fit").then(({ FitAddon }) => {
+    let cleanup: (() => void) | undefined;
+
+    Promise.all([import("xterm"), import("@xterm/addon-fit")]).then(
+      ([{ Terminal }, { FitAddon }]) => {
+        if (!termRef.current) return;
+
         const term = new Terminal({
           theme: {
             background: "#0a0e1a",
@@ -47,12 +52,14 @@ export default function TerminalPage() {
           cursorBlink: true,
           cursorStyle: "block",
           scrollback: 5000,
+          convertEol: true,
         });
 
         const fitAddon = new FitAddon();
         term.loadAddon(fitAddon);
-        term.open(termRef.current!);
+        term.open(termRef.current);
         fitAddon.fit();
+        term.focus();
 
         terminalRef.current = term;
         fitRef.current = fitAddon;
@@ -71,15 +78,22 @@ export default function TerminalPage() {
         };
 
         window.addEventListener("resize", onResize);
-        return () => window.removeEventListener("resize", onResize);
-      });
-    });
+        cleanup = () => window.removeEventListener("resize", onResize);
+      }
+    );
+
+    return () => cleanup?.();
   }, []);
 
   function connect(serverId: number) {
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
+    }
+
+    if (onDataRef.current) {
+      onDataRef.current.dispose();
+      onDataRef.current = null;
     }
 
     setSelectedId(serverId);
@@ -92,14 +106,15 @@ export default function TerminalPage() {
     term.clear();
     term.writeln("\x1b[33mConnecting to server...\x1b[0m");
 
-    const wsBase = window.location.origin.replace(/^http/, "ws");
-    const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-    const ws = new WebSocket(`${wsBase}${basePath}/api/terminal?serverId=${serverId}`);
+    const loc = window.location;
+    const wsProtocol = loc.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${wsProtocol}//${loc.host}/api/terminal?serverId=${serverId}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setStatusMsg("Connected");
       setConnected(true);
+      setTimeout(() => term.focus(), 100);
     };
 
     ws.onmessage = (event) => {
@@ -128,17 +143,18 @@ export default function TerminalPage() {
     };
 
     ws.onclose = () => {
-      if (connected) {
-        term.writeln("\r\n\x1b[33mConnection closed.\x1b[0m");
-      }
-      setConnected(false);
+      setConnected((prev) => {
+        if (prev) term.writeln("\r\n\x1b[33mConnection closed.\x1b[0m");
+        return false;
+      });
     };
 
-    term.onData((data) => {
+    const disposable = term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "data", data }));
       }
     });
+    onDataRef.current = disposable;
   }
 
   function disconnect() {
@@ -146,22 +162,38 @@ export default function TerminalPage() {
       wsRef.current.close();
       wsRef.current = null;
     }
+    if (onDataRef.current) {
+      onDataRef.current.dispose();
+      onDataRef.current = null;
+    }
     setConnected(false);
     setStatusMsg("Disconnected.");
     terminalRef.current?.writeln("\r\n\x1b[33mDisconnected.\x1b[0m");
+  }
+
+  async function handlePaste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "data", data: text }));
+        terminalRef.current?.focus();
+      }
+    } catch {
+      terminalRef.current?.focus();
+    }
   }
 
   return (
     <div className="space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">SSH Terminal</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">SSH Terminal</h1>
           <p className="text-muted-foreground mt-1">Direct shell access to your servers.</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Server className="h-4 w-4 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-3">
+        <Server className="h-4 w-4 text-muted-foreground shrink-0" />
         <select
           value={selectedId ?? ""}
           onChange={(e) => {
@@ -179,37 +211,55 @@ export default function TerminalPage() {
         </select>
 
         {connected && (
-          <button
-            onClick={disconnect}
-            className="text-xs bg-red-900/30 text-red-400 border border-red-800/50 px-3 py-1.5 rounded-lg hover:bg-red-900/50 transition-colors"
-          >
-            Disconnect
-          </button>
+          <>
+            <button
+              onClick={handlePaste}
+              title="Paste from clipboard"
+              className="flex items-center gap-1.5 text-xs bg-muted text-foreground border border-border px-3 py-1.5 rounded-lg hover:bg-muted/70 transition-colors"
+            >
+              <Clipboard className="h-3.5 w-3.5" />
+              Paste
+            </button>
+            <button
+              onClick={disconnect}
+              className="text-xs bg-red-900/30 text-red-400 border border-red-800/50 px-3 py-1.5 rounded-lg hover:bg-red-900/50 transition-colors"
+            >
+              Disconnect
+            </button>
+          </>
         )}
 
         <div className="flex items-center gap-2 ml-auto">
-          <div className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-muted-foreground"}`} />
+          <div className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground"}`} />
           <span className="text-xs text-muted-foreground">{statusMsg}</span>
         </div>
       </div>
 
       <div
-        className="rounded-xl border border-border overflow-hidden flex-1 relative"
+        className="rounded-xl border border-border overflow-hidden flex-1 relative cursor-text"
         style={{ minHeight: "520px", background: "#0a0e1a" }}
+        onClick={() => terminalRef.current?.focus()}
+        tabIndex={0}
+        onFocus={() => terminalRef.current?.focus()}
       >
-        <div className="absolute top-0 left-0 right-0 flex items-center gap-2 px-4 py-2 bg-card/80 border-b border-border z-10">
+        <div className="absolute top-0 left-0 right-0 flex items-center gap-2 px-4 py-2 bg-card/80 border-b border-border z-10 pointer-events-none">
           <TerminalIcon className="h-3 w-3 text-muted-foreground" />
           <span className="text-xs text-muted-foreground font-mono">
             {selectedId && servers?.find(s => s.id === selectedId)
               ? `root@${servers.find(s => s.id === selectedId)?.host}`
               : "no session"}
           </span>
+          {connected && (
+            <span className="ml-2 text-xs text-emerald-400 font-mono">● connected</span>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground/50 pointer-events-auto">
+            Click terminal to focus · Ctrl+Shift+C/V to copy/paste
+          </span>
         </div>
         <div
           ref={termRef}
-          className="pt-8 h-full"
+          className="pt-9 h-full"
           style={{ height: "520px" }}
-          onClick={() => terminalRef.current?.focus()}
         />
       </div>
     </div>
