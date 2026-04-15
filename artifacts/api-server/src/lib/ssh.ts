@@ -98,6 +98,58 @@ export function runSshCommand(
   });
 }
 
+export function runSshLiveStream(
+  options: SshConnectionOptions,
+  command: string,
+  onData: (chunk: string) => void,
+  onEnd: () => void
+): () => void {
+  const conn = new Client();
+
+  conn.on("ready", () => {
+    conn.exec(command, (err, stream) => {
+      if (err) {
+        onEnd();
+        conn.end();
+        return;
+      }
+      stream.on("data", (data: Buffer) => onData(data.toString()));
+      stream.stderr.on("data", (data: Buffer) => onData(data.toString()));
+      stream.on("close", () => {
+        conn.end();
+        onEnd();
+      });
+    });
+  });
+
+  conn.on("error", (err) => {
+    onData(`\nSSH error: ${err.message}\n`);
+    onEnd();
+  });
+
+  const connectOpts: Record<string, unknown> = {
+    host: options.host,
+    port: options.port,
+    username: options.username,
+    readyTimeout: 15000,
+  };
+  if (options.privateKey) {
+    connectOpts.privateKey = options.privateKey;
+  } else {
+    connectOpts.password = options.password;
+  }
+  try {
+    conn.connect(connectOpts as Parameters<typeof conn.connect>[0]);
+  } catch (e: unknown) {
+    onData(`\nConnection error: ${(e as Error).message}\n`);
+    onEnd();
+  }
+
+  return () => {
+    try { conn.end(); } catch (_) {}
+  };
+}
+
 export function runSshCommandStream(
   options: SshConnectionOptions,
   command: string,

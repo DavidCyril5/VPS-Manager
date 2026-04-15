@@ -14,7 +14,7 @@ import {
   UpdateNginxConfigBody,
   GetSslStatusParams,
 } from "@workspace/api-zod";
-import { runSshCommand, runSshCommandStream } from "../lib/ssh";
+import { runSshCommand, runSshCommandStream, runSshLiveStream } from "../lib/ssh";
 import crypto from "crypto";
 
 const router: IRouter = Router();
@@ -459,6 +459,61 @@ router.get("/sites/:id/deploy/stream", async (req, res): Promise<void> => {
 
   sendEvent({ type: "done", success: result.success });
   res.end();
+});
+
+router.get("/sites/:id/logs/stream", async (req, res): Promise<void> => {
+  const params = DeploySiteParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const site = await Site.findOne({ id: params.data.id });
+  if (!site) {
+    res.status(404).json({ error: "Site not found" });
+    return;
+  }
+  const siteData = site.toObject() as Record<string, unknown>;
+  const server = await Server.findOne({ id: siteData.serverId });
+  if (!server) {
+    res.status(404).json({ error: "Server not found for this site" });
+    return;
+  }
+  const serverData = server.toObject() as Record<string, unknown>;
+  const domain = siteData.domain as string;
+  const logType = (req.query.type as string) || "access";
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const sshOpts = {
+    host: serverData.host as string,
+    port: serverData.port as number,
+    username: serverData.username as string,
+    password: serverData.password as string,
+    privateKey: serverData.privateKey as string | null,
+  };
+
+  const logFile = logType === "error"
+    ? `/var/log/nginx/error.log`
+    : `/var/log/nginx/access.log`;
+
+  const tailCmd = `tail -n 80 -F ${logFile} 2>/dev/null | grep --line-buffered -i "${domain}" || tail -n 80 -F ${logFile} 2>/dev/null`;
+
+  const cancel = runSshLiveStream(
+    sshOpts,
+    tailCmd,
+    (chunk) => {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    },
+    () => {
+      try { res.end(); } catch (_) {}
+    }
+  );
+
+  req.on("close", () => { cancel(); });
 });
 
 router.post("/sites/:id/ssl", async (req, res): Promise<void> => {

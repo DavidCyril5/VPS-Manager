@@ -10,12 +10,13 @@ import {
   useUpdateSite,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock } from "lucide-react";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
 import { NginxConfigModal } from "@/components/nginx-config-modal";
 import { LiveLogModal } from "@/components/live-log-modal";
+import { SiteLogsModal } from "@/components/site-logs-modal";
 
 interface GitToken { id: number; label: string; host: string; }
 interface GHRepo { full_name: string; clone_url: string; private: boolean; description: string | null; updated_at: string; }
@@ -98,6 +99,7 @@ export default function Sites() {
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
   const [liveDeployTarget, setLiveDeployTarget] = useState<{ id: number; name: string } | null>(null);
+  const [siteLogsTarget, setSiteLogsTarget] = useState<{ id: number; domain: string } | null>(null);
   const [nginxModal, setNginxModal] = useState<{ siteId: number; domain: string } | null>(null);
   const [webhookVisible, setWebhookVisible] = useState<Set<number>>(new Set());
   const [saveTokenLabel, setSaveTokenLabel] = useState("");
@@ -591,6 +593,16 @@ export default function Sites() {
                     <FileCode className="h-3 w-3" />
                     Nginx
                   </button>
+                  {site.status === "active" && (
+                    <button
+                      onClick={() => setSiteLogsTarget({ id: site.id, domain: site.domain })}
+                      className="flex items-center gap-1.5 text-xs bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 border border-purple-800/50 px-3 py-1.5 rounded-lg transition-colors"
+                      title="View live nginx logs for this site"
+                    >
+                      <ScrollText className="h-3 w-3" />
+                      Logs
+                    </button>
+                  )}
                   {site.webhookToken && (
                     <button
                       onClick={() => toggleWebhook(site.id)}
@@ -733,6 +745,14 @@ export default function Sites() {
           siteId={liveDeployTarget.id}
           siteName={liveDeployTarget.name}
           onClose={() => setLiveDeployTarget(null)}
+        />
+      )}
+
+      {siteLogsTarget && (
+        <SiteLogsModal
+          siteId={siteLogsTarget.id}
+          domain={siteLogsTarget.domain}
+          onClose={() => setSiteLogsTarget(null)}
         />
       )}
     </div>
