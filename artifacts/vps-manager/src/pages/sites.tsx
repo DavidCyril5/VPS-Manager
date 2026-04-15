@@ -180,12 +180,34 @@ export default function Sites() {
     setEditForm((f) => ({ ...f, repoToken: token }));
   }
 
+  const defaultPaths = ["/var/www/html", ""];
+  const buildSuggestions: Record<string, string> = {
+    nodejs: "npm install && npm run build --if-present",
+    python: "pip install -r requirements.txt",
+    php: "",
+    static: "",
+  };
+
+  function slugify(s: string) {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  }
+
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value, type } = e.target;
-    setForm((f) => ({
-      ...f,
-      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : name === "serverId" ? Number(value) : value,
-    }));
+    const checked = type === "checkbox" ? (e.target as HTMLInputElement).checked : undefined;
+    setForm((f) => {
+      const updated = { ...f, [name]: checked !== undefined ? checked : name === "serverId" ? Number(value) : value };
+      if (name === "name" && value) {
+        const slug = slugify(value);
+        if (defaultPaths.includes(f.deployPath) || f.deployPath === `/var/www/${slugify(f.name)}`) {
+          updated.deployPath = `/var/www/${slug}`;
+        }
+      }
+      if (name === "siteType" && !f.buildCommand) {
+        updated.buildCommand = buildSuggestions[value] ?? "";
+      }
+      return updated;
+    });
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -363,8 +385,21 @@ export default function Sites() {
               )}
             </div>
             <div>
-              <label className="block text-sm text-muted-foreground mb-1">Build Command (optional)</label>
-              <input name="buildCommand" value={form.buildCommand} onChange={handleChange} placeholder="npm run build" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm text-muted-foreground">Build Command (optional)</label>
+                {buildSuggestions[form.siteType] && (
+                  <button type="button" onClick={() => setForm((f) => ({ ...f, buildCommand: buildSuggestions[f.siteType] ?? "" }))} className="text-xs text-primary hover:underline">
+                    Use suggested
+                  </button>
+                )}
+              </div>
+              <input name="buildCommand" value={form.buildCommand} onChange={handleChange} placeholder={buildSuggestions[form.siteType] || "e.g. npm run build"} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              {form.siteType === "nodejs" && !form.buildCommand && (
+                <p className="text-xs text-muted-foreground mt-1">Leave blank — Node.js sites auto-run <code className="bg-muted px-1 rounded">npm install && npm run build --if-present</code></p>
+              )}
+              {form.siteType === "python" && !form.buildCommand && (
+                <p className="text-xs text-muted-foreground mt-1">Leave blank — Python sites auto-run <code className="bg-muted px-1 rounded">pip install -r requirements.txt</code> if it exists</p>
+              )}
             </div>
             <div className="col-span-2 flex items-center gap-2">
               <input name="autoSync" type="checkbox" checked={form.autoSync} onChange={handleChange} id="autoSync" className="rounded" />

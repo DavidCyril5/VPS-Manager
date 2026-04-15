@@ -163,9 +163,13 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
   const repoUrl = siteData.repoUrl as string | null;
   const repoToken = siteData.repoToken as string | null;
   const deployPath = siteData.deployPath as string;
-  const buildCommand = siteData.buildCommand as string | null;
-
+  const siteType = siteData.siteType as string;
   const domain = siteData.domain as string;
+
+  const buildCommand = (siteData.buildCommand as string | null)
+    || (siteType === "nodejs" ? `npm install && npm run build --if-present`
+      : siteType === "python" ? `[ -f requirements.txt ] && pip install -r requirements.txt || true`
+      : null);
 
   let deployScript = "";
   if (repoUrl) {
@@ -483,7 +487,11 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
   const repoUrl = siteData.repoUrl as string | null;
   const repoToken = siteData.repoToken as string | null;
   const deployPath = siteData.deployPath as string;
-  const buildCommand = siteData.buildCommand as string | null;
+  const siteTypeW = siteData.siteType as string;
+  const buildCommand = (siteData.buildCommand as string | null)
+    || (siteTypeW === "nodejs" ? `npm install && npm run build --if-present`
+      : siteTypeW === "python" ? `[ -f requirements.txt ] && pip install -r requirements.txt || true`
+      : null);
 
   if (!repoUrl) {
     res.status(400).json({ error: "No repo configured for this site" });
