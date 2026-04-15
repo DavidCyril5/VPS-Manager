@@ -7,9 +7,10 @@ import {
   useDeleteSite,
   useDeploySite,
   useInstallSsl,
+  useUpdateSite,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save } from "lucide-react";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
@@ -84,8 +85,14 @@ export default function Sites() {
   const deploySite = useDeploySite();
   const installSsl = useInstallSsl();
 
+  const updateSite = useUpdateSite();
   const { tokens: gitTokens, saveToken, deleteToken, resolveToken } = useGitTokens();
   const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "", domain: "", repoUrl: "", repoToken: "",
+    deployPath: "", buildCommand: "", siteType: "static", autoSync: false,
+  });
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
   const [nginxModal, setNginxModal] = useState<{ siteId: number; domain: string } | null>(null);
@@ -119,6 +126,58 @@ export default function Sites() {
     setSaveTokenLabel("");
     setShowSaveToken(false);
     toast({ title: "Token saved" });
+  }
+
+  function openEdit(site: typeof sites extends (infer T)[] | undefined ? T : never) {
+    setEditTarget(site.id);
+    setEditForm({
+      name: site.name ?? "",
+      domain: site.domain ?? "",
+      repoUrl: (site as unknown as Record<string, string>).repoUrl ?? "",
+      repoToken: "",
+      deployPath: (site as unknown as Record<string, string>).deployPath ?? "",
+      buildCommand: (site as unknown as Record<string, string>).buildCommand ?? "",
+      siteType: site.siteType ?? "static",
+      autoSync: (site as unknown as Record<string, boolean>).autoSync ?? false,
+    });
+  }
+
+  function handleEditChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value, type } = e.target;
+    setEditForm((f) => ({
+      ...f,
+      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : value,
+    }));
+  }
+
+  async function handleEditSaveAndRedeploy(andRedeploy: boolean) {
+    if (!editTarget) return;
+    updateSite.mutate(
+      {
+        id: editTarget,
+        data: {
+          ...editForm,
+          repoUrl: editForm.repoUrl || null,
+          repoToken: editForm.repoToken || null,
+          buildCommand: editForm.buildCommand || null,
+        },
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
+          toast({ title: "Settings saved" });
+          if (andRedeploy) handleDeploy(editTarget);
+          setEditTarget(null);
+        },
+        onError: () => toast({ title: "Failed to save", variant: "destructive" }),
+      }
+    );
+  }
+
+  async function handleEditSelectSavedToken(id: number) {
+    if (!id) return;
+    const token = await resolveToken(id);
+    setEditForm((f) => ({ ...f, repoToken: token }));
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
@@ -424,6 +483,13 @@ export default function Sites() {
                     </button>
                   )}
                   <button
+                    onClick={() => editTarget === site.id ? setEditTarget(null) : openEdit(site)}
+                    className="p-1.5 text-muted-foreground hover:text-amber-400 transition-colors"
+                    title="Edit site settings"
+                  >
+                    {editTarget === site.id ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                  </button>
+                  <button
                     onClick={() => setDeleteTarget(site.id)}
                     className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors"
                   >
@@ -431,6 +497,69 @@ export default function Sites() {
                   </button>
                 </div>
               </div>
+
+              {editTarget === site.id && (
+                <div className="mt-3 border-t border-border/50 pt-4 space-y-3">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Edit Site Settings</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Site Name</label>
+                      <input name="name" value={editForm.name} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Domain</label>
+                      <input name="domain" value={editForm.domain} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Repo URL</label>
+                      <input name="repoUrl" value={editForm.repoUrl} onChange={handleEditChange} placeholder="https://github.com/user/repo" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs text-muted-foreground mb-1">Access Token</label>
+                      {gitTokens.length > 0 && (
+                        <select defaultValue="" onChange={(e) => { if (e.target.value) handleEditSelectSavedToken(Number(e.target.value)); }} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+                          <option value="">— Use saved token —</option>
+                          {gitTokens.map((t) => <option key={t.id} value={t.id}>{t.label} ({t.host})</option>)}
+                        </select>
+                      )}
+                      <input name="repoToken" type="password" value={editForm.repoToken} onChange={handleEditChange} placeholder="Leave blank to keep existing" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Deploy Path</label>
+                      <input name="deployPath" value={editForm.deployPath} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Build Command</label>
+                      <input name="buildCommand" value={editForm.buildCommand} onChange={handleEditChange} placeholder="npm run build" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Site Type</label>
+                      <select name="siteType" value={editForm.siteType} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+                        <option value="static">Static</option>
+                        <option value="nodejs">Node.js</option>
+                        <option value="php">PHP</option>
+                        <option value="python">Python</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2 pt-4">
+                      <input name="autoSync" type="checkbox" checked={editForm.autoSync} onChange={handleEditChange} id={`autoSync-${site.id}`} className="rounded" />
+                      <label htmlFor={`autoSync-${site.id}`} className="text-sm">Enable auto-sync</label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => handleEditSaveAndRedeploy(true)} disabled={updateSite.isPending} className="flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                      <Rocket className="h-3.5 w-3.5" />
+                      Save & Redeploy
+                    </button>
+                    <button onClick={() => handleEditSaveAndRedeploy(false)} disabled={updateSite.isPending} className="bg-muted text-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                      Save Only
+                    </button>
+                    <button onClick={() => setEditTarget(null)} className="text-muted-foreground px-4 py-2 rounded-lg text-sm hover:text-foreground">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {webhookVisible.has(site.id) && site.webhookToken && (
                 <div className="bg-muted/30 rounded-lg px-4 py-3 mt-2 border border-border/50">
