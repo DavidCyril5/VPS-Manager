@@ -1,15 +1,23 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: VPS Website Manager API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: servers
+    description: VPS server management
+  - name: sites
+    description: Website deployment management
+  - name: cloudflare
+    description: Cloudflare integration
+  - name: activity
+    description: Activity logs
+
 paths:
   /healthz:
     get:
@@ -24,6 +32,457 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /servers:
+    get:
+      operationId: listServers
+      tags: [servers]
+      summary: List all VPS servers
+      responses:
+        "200":
+          description: List of VPS servers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Server"
+    post:
+      operationId: createServer
+      tags: [servers]
+      summary: Add a new VPS server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServerBody"
+      responses:
+        "201":
+          description: Created server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /servers/{id}:
+    get:
+      operationId: getServer
+      tags: [servers]
+      summary: Get a specific VPS server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Server details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateServer
+      tags: [servers]
+      summary: Update a VPS server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateServerBody"
+      responses:
+        "200":
+          description: Updated server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteServer
+      tags: [servers]
+      summary: Remove a VPS server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /servers/{id}/test-connection:
+    post:
+      operationId: testServerConnection
+      tags: [servers]
+      summary: Test SSH connection to VPS server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Connection test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTestResult"
+
+  /servers/{id}/install-nginx:
+    post:
+      operationId: installNginx
+      tags: [servers]
+      summary: Install and configure Nginx on VPS server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Nginx install result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+
+  /servers/{id}/stats:
+    get:
+      operationId: getServerStats
+      tags: [servers]
+      summary: Get server resource stats (CPU, memory, disk)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Server stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerStats"
+
+  /sites:
+    get:
+      operationId: listSites
+      tags: [sites]
+      summary: List all deployed websites
+      responses:
+        "200":
+          description: List of sites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Site"
+    post:
+      operationId: createSite
+      tags: [sites]
+      summary: Deploy a new website
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSiteBody"
+      responses:
+        "201":
+          description: Created site
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sites/{id}:
+    get:
+      operationId: getSite
+      tags: [sites]
+      summary: Get a specific site
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Site details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateSite
+      tags: [sites]
+      summary: Update site configuration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSiteBody"
+      responses:
+        "200":
+          description: Updated site
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteSite
+      tags: [sites]
+      summary: Remove a deployed site
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sites/{id}/deploy:
+    post:
+      operationId: deploySite
+      tags: [sites]
+      summary: Trigger a deployment/re-deployment of a site
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deploy result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+
+  /sites/{id}/ssl:
+    post:
+      operationId: installSsl
+      tags: [sites]
+      summary: Install SSL certificate using Let's Encrypt
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SSL install result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+
+  /cloudflare:
+    get:
+      operationId: listCloudflareConfigs
+      tags: [cloudflare]
+      summary: List Cloudflare configurations
+      responses:
+        "200":
+          description: Cloudflare configs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CloudflareConfig"
+    post:
+      operationId: createCloudflareConfig
+      tags: [cloudflare]
+      summary: Save a Cloudflare API configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCloudflareConfigBody"
+      responses:
+        "201":
+          description: Created config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudflareConfig"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /cloudflare/{id}:
+    delete:
+      operationId: deleteCloudflareConfig
+      tags: [cloudflare]
+      summary: Delete a Cloudflare config
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /cloudflare/{id}/zones:
+    get:
+      operationId: getCloudflareZones
+      tags: [cloudflare]
+      summary: List zones in a Cloudflare account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of zones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CloudflareZone"
+
+  /cloudflare/{id}/create-dns:
+    post:
+      operationId: createDnsRecord
+      tags: [cloudflare]
+      summary: Create a DNS A record and enable proxy in Cloudflare
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDnsRecordBody"
+      responses:
+        "200":
+          description: DNS record creation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [activity]
+      summary: Get recent activity/deployment logs
+      responses:
+        "200":
+          description: Activity entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEntry"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [activity]
+      summary: Get dashboard summary counts
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +493,339 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Server:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        status:
+          type: string
+          enum: [connected, disconnected, unknown]
+        nginxInstalled:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - host
+        - port
+        - username
+        - status
+        - nginxInstalled
+        - createdAt
+        - updatedAt
+
+    CreateServerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        password:
+          type: string
+        privateKey:
+          type: ["string", "null"]
+      required:
+        - name
+        - host
+        - port
+        - username
+        - password
+
+    UpdateServerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        password:
+          type: string
+        privateKey:
+          type: ["string", "null"]
+
+    ConnectionTestResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        output:
+          type: ["string", "null"]
+      required:
+        - success
+        - message
+
+    CommandResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        output:
+          type: string
+        error:
+          type: ["string", "null"]
+      required:
+        - success
+        - output
+
+    ServerStats:
+      type: object
+      properties:
+        cpu:
+          type: number
+        memoryUsed:
+          type: number
+        memoryTotal:
+          type: number
+        diskUsed:
+          type: number
+        diskTotal:
+          type: number
+        uptime:
+          type: string
+      required:
+        - cpu
+        - memoryUsed
+        - memoryTotal
+        - diskUsed
+        - diskTotal
+        - uptime
+
+    Site:
+      type: object
+      properties:
+        id:
+          type: integer
+        serverId:
+          type: integer
+        name:
+          type: string
+        domain:
+          type: string
+        repoUrl:
+          type: ["string", "null"]
+        repoToken:
+          type: ["string", "null"]
+        deployPath:
+          type: string
+        buildCommand:
+          type: ["string", "null"]
+        siteType:
+          type: string
+          enum: [static, nodejs, php, python]
+        status:
+          type: string
+          enum: [deploying, active, failed, stopped]
+        sslInstalled:
+          type: boolean
+        autoSync:
+          type: boolean
+        lastDeployedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - serverId
+        - name
+        - domain
+        - deployPath
+        - siteType
+        - status
+        - sslInstalled
+        - autoSync
+        - createdAt
+        - updatedAt
+
+    CreateSiteBody:
+      type: object
+      properties:
+        serverId:
+          type: integer
+        name:
+          type: string
+        domain:
+          type: string
+        repoUrl:
+          type: ["string", "null"]
+        repoToken:
+          type: ["string", "null"]
+        deployPath:
+          type: string
+        buildCommand:
+          type: ["string", "null"]
+        siteType:
+          type: string
+          enum: [static, nodejs, php, python]
+        autoSync:
+          type: boolean
+      required:
+        - serverId
+        - name
+        - domain
+        - deployPath
+        - siteType
+
+    UpdateSiteBody:
+      type: object
+      properties:
+        name:
+          type: string
+        domain:
+          type: string
+        repoUrl:
+          type: ["string", "null"]
+        repoToken:
+          type: ["string", "null"]
+        buildCommand:
+          type: ["string", "null"]
+        siteType:
+          type: string
+          enum: [static, nodejs, php, python]
+        autoSync:
+          type: boolean
+
+    CloudflareConfig:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+        email:
+          type: string
+        zoneId:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - label
+        - email
+        - createdAt
+
+    CreateCloudflareConfigBody:
+      type: object
+      properties:
+        label:
+          type: string
+        email:
+          type: string
+        apiToken:
+          type: string
+        zoneId:
+          type: ["string", "null"]
+      required:
+        - label
+        - email
+        - apiToken
+
+    CloudflareZone:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - name
+        - status
+
+    CreateDnsRecordBody:
+      type: object
+      properties:
+        zoneId:
+          type: string
+        domain:
+          type: string
+        ip:
+          type: string
+        proxied:
+          type: boolean
+      required:
+        - zoneId
+        - domain
+        - ip
+
+    ActivityEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        siteId:
+          type: ["integer", "null"]
+        serverId:
+          type: ["integer", "null"]
+        type:
+          type: string
+          enum: [deploy, ssl, nginx_install, dns_setup, connection_test, error]
+        status:
+          type: string
+          enum: [success, failure, running]
+        message:
+          type: string
+        details:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - type
+        - status
+        - message
+        - createdAt
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalServers:
+          type: integer
+        totalSites:
+          type: integer
+        activeSites:
+          type: integer
+        sslEnabled:
+          type: integer
+        recentDeployments:
+          type: integer
+      required:
+        - totalServers
+        - totalSites
+        - activeSites
+        - sslEnabled
+        - recentDeployments

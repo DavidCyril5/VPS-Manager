@@ -69,8 +69,10 @@ autoInstallPeers: false
 
 onlyBuiltDependencies:
   - '@swc/core'
+  - cpu-features
   - esbuild
   - msw
+  - ssh2
   - unrs-resolver
 
 overrides:
