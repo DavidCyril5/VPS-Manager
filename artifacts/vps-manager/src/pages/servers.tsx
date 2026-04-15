@@ -118,24 +118,25 @@ export default function Servers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Servers</h1>
-          <p className="text-muted-foreground mt-1">Manage your VPS servers.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Servers</h1>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">Manage your VPS servers.</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-2 sm:px-4 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
         >
           <Plus className="h-4 w-4" />
-          Add Server
+          <span className="hidden sm:inline">Add Server</span>
+          <span className="sm:hidden">Add</span>
         </button>
       </div>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-6 space-y-4">
           <h2 className="text-lg font-semibold">New Server</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Name</label>
               <input name="name" value={form.name} onChange={handleChange} placeholder="My VPS" required className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
@@ -186,31 +187,33 @@ export default function Servers() {
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
           {servers.map((server) => (
-            <div key={server.id} className="flex items-center gap-4 px-6 py-4">
-              <div className="flex items-center gap-2">
-                {statusIcon[server.status] ?? statusIcon["unknown"]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold">{server.name}</span>
-                  {server.nginxInstalled && (
-                    <span className="text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">Nginx</span>
-                  )}
-                  <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${
-                    server.status === "connected"
-                      ? "bg-emerald-900/20 text-emerald-400 border-emerald-800/50"
-                      : server.status === "disconnected"
-                      ? "bg-red-900/20 text-red-400 border-red-800/50"
-                      : "bg-muted/30 text-muted-foreground border-border"
-                  }`}>
-                    {server.status}
-                  </span>
+            <div key={server.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6 sm:py-4">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="shrink-0">
+                  {statusIcon[server.status] ?? statusIcon["unknown"]}
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {server.username}@{server.host}:{server.port}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold">{server.name}</span>
+                    {server.nginxInstalled && (
+                      <span className="text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">Nginx</span>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${
+                      server.status === "connected"
+                        ? "bg-emerald-900/20 text-emerald-400 border-emerald-800/50"
+                        : server.status === "disconnected"
+                        ? "bg-red-900/20 text-red-400 border-red-800/50"
+                        : "bg-muted/30 text-muted-foreground border-border"
+                    }`}>
+                      {server.status}
+                    </span>
+                  </div>
+                  <div className="text-sm text-muted-foreground truncate">
+                    {server.username}@{server.host}:{server.port}
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => handleTest(server.id)}
                   disabled={testConn.isPending}

@@ -326,24 +326,25 @@ export default function Sites() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Sites</h1>
-          <p className="text-muted-foreground mt-1">Deploy and manage your websites.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Sites</h1>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">Deploy and manage your websites.</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90"
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-2 sm:px-4 rounded-lg text-sm font-medium hover:opacity-90 shrink-0"
         >
           <Plus className="h-4 w-4" />
-          Deploy Site
+          <span className="hidden sm:inline">Deploy Site</span>
+          <span className="sm:hidden">Deploy</span>
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-4 sm:p-6 space-y-4">
           <h2 className="text-lg font-semibold">New Site</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Server</label>
               <select name="serverId" value={form.serverId} onChange={handleChange} required className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
@@ -540,10 +541,10 @@ export default function Sites() {
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
           {sites.map((site) => (
-            <div key={site.id} className="px-6 py-4 space-y-2">
-              <div className="flex items-center gap-4">
+            <div key={site.id} className="px-4 py-3 sm:px-6 sm:py-4 space-y-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1 flex-wrap">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-semibold">{site.name}</span>
                     <span className={`text-xs border px-2 py-0.5 rounded-full capitalize ${statusColors[site.status] ?? statusColors.stopped}`}>
                       {site.status}
@@ -557,15 +558,15 @@ export default function Sites() {
                     )}
                     <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{site.siteType}</span>
                   </div>
-                  <div className="text-sm text-muted-foreground flex items-center gap-2">
-                    <ExternalLink className="h-3 w-3" />
-                    <a href={`http://${site.domain}`} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">
+                  <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+                    <ExternalLink className="h-3 w-3 shrink-0" />
+                    <a href={`http://${site.domain}`} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors truncate">
                       {site.domain}
                     </a>
-                    {site.lastDeployedAt && <span className="text-xs">· Last deployed {new Date(site.lastDeployedAt).toLocaleDateString()}</span>}
+                    {site.lastDeployedAt && <span className="text-xs shrink-0">· Last deployed {new Date(site.lastDeployedAt).toLocaleDateString()}</span>}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => handleDeploy(site.id)}
                     disabled={deploySite.isPending}
@@ -631,7 +632,7 @@ export default function Sites() {
               {editTarget === site.id && (
                 <div className="mt-3 border-t border-border/50 pt-4 space-y-3">
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Edit Site Settings</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">Site Name</label>
                       <input name="name" value={editForm.name} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
