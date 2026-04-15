@@ -8,7 +8,7 @@ import {
   useInstallNginx,
   getListServersQueryKey,
 } from "@workspace/api-client-react";
-import { Server, Plus, Trash2, Wifi, Settings2, CheckCircle2, XCircle, WifiOff } from "lucide-react";
+import { Server, Plus, Trash2, Wifi, Settings2, CheckCircle2, XCircle, WifiOff, Pencil, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -32,6 +32,9 @@ export default function Servers() {
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", host: "", port: 22, username: "", password: "", privateKey: "" });
+  const [editSaving, setEditSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
     host: "",
@@ -44,6 +47,40 @@ export default function Servers() {
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: name === "port" ? Number(value) : value }));
+  }
+
+  function handleEditChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const { name, value } = e.target;
+    setEditForm((f) => ({ ...f, [name]: name === "port" ? Number(value) : value }));
+  }
+
+  function openEdit(server: { id: number; name: string; host: string; port: number; username: string; status: string }) {
+    setEditTarget(server.id);
+    setEditForm({ name: server.name, host: server.host, port: server.port, username: server.username, password: "", privateKey: "" });
+  }
+
+  async function handleEditSave() {
+    if (!editTarget) return;
+    setEditSaving(true);
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    try {
+      const body: Record<string, unknown> = { ...editForm };
+      if (!body.password) delete body.password;
+      if (!body.privateKey) delete body.privateKey;
+      const r = await fetch(`${base}/api/servers/${editTarget}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("vpm-token") ?? ""}` },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error("Failed");
+      queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });
+      setEditTarget(null);
+      toast({ title: "Server updated" });
+    } catch {
+      toast({ title: "Failed to update server", variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -187,7 +224,8 @@ export default function Servers() {
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
           {servers.map((server) => (
-            <div key={server.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6 sm:py-4">
+            <div key={server.id} className="px-4 py-3 sm:px-6 sm:py-4 space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="shrink-0">
                   {statusIcon[server.status] ?? statusIcon["unknown"]}
@@ -237,12 +275,59 @@ export default function Servers() {
                   Details
                 </Link>
                 <button
+                  onClick={() => editTarget === server.id ? setEditTarget(null) : openEdit(server)}
+                  className="p-1.5 text-muted-foreground hover:text-amber-400 transition-colors"
+                  title="Edit server credentials"
+                >
+                  {editTarget === server.id ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                </button>
+                <button
                   onClick={() => handleDelete(server.id)}
                   className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
+              </div>
+              {editTarget === server.id && (
+                <div className="border-t border-border/50 pt-4 pb-1 px-1 mt-1 space-y-3">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Edit Server Credentials</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Name</label>
+                      <input name="name" value={editForm.name} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Host / IP</label>
+                      <input name="host" value={editForm.host} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Port</label>
+                      <input name="port" type="number" value={editForm.port} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Username</label>
+                      <input name="username" value={editForm.username} onChange={handleEditChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Password <span className="opacity-60">(leave blank to keep existing)</span></label>
+                      <input name="password" type="password" value={editForm.password} onChange={handleEditChange} placeholder="New password..." className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Private Key <span className="opacity-60">(leave blank to keep existing)</span></label>
+                      <input name="privateKey" value={editForm.privateKey} onChange={handleEditChange} placeholder="Paste SSH key..." className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleEditSave} disabled={editSaving} className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                      {editSaving ? "Saving..." : "Save"}
+                    </button>
+                    <button onClick={() => setEditTarget(null)} className="bg-muted text-foreground px-4 py-2 rounded-lg text-sm hover:opacity-90">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

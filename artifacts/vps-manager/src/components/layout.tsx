@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Server, Globe, Activity, Cloud, LayoutDashboard, TerminalSquare, Menu, X } from "lucide-react";
+import { Server, Globe, Activity, Cloud, LayoutDashboard, TerminalSquare, Menu, X, Settings } from "lucide-react";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -13,6 +13,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { name: "Cloudflare", href: "/cloudflare", icon: Cloud },
     { name: "Terminal", href: "/terminal", icon: TerminalSquare },
     { name: "Activity", href: "/activity", icon: Activity },
+    { name: "Settings", href: "/settings", icon: Settings },
   ];
 
   const NavLinks = () => (

@@ -1,6 +1,6 @@
 import mongoose, { Schema, model } from "mongoose";
+import crypto from "crypto";
 
-// id: false disables Mongoose's built-in _id virtual so our custom integer id field works properly
 const baseOpts = {
   toJSON: {
     transform: (_doc: unknown, ret: Record<string, unknown>) => {
@@ -18,6 +18,36 @@ const baseOpts = {
   },
   id: false,
 };
+
+// --- AES-256-GCM encryption for SSH credentials at rest ---
+const ENC_PREFIX = "enc:";
+
+function getEncKey(): Buffer {
+  const secret = process.env["SESSION_SECRET"] ?? "fallback-secret-change-me";
+  return crypto.createHash("sha256").update(secret).digest();
+}
+
+export function encryptSecret(plain: string): string {
+  const key = getEncKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ENC_PREFIX + Buffer.concat([iv, tag, encrypted]).toString("base64");
+}
+
+export function decryptSecret(enc: string | null | undefined): string {
+  if (!enc) return "";
+  if (!enc.startsWith(ENC_PREFIX)) return enc;
+  const key = getEncKey();
+  const buf = Buffer.from(enc.slice(ENC_PREFIX.length), "base64");
+  const iv = buf.subarray(0, 12);
+  const tag = buf.subarray(12, 28);
+  const ciphertext = buf.subarray(28);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(ciphertext) + decipher.final("utf8");
+}
 
 const CounterSchema = new Schema({ _id: String, seq: { type: Number, default: 0 } }, { id: false });
 const Counter = model("Counter", CounterSchema);
@@ -114,14 +144,31 @@ const ActivitySchema = new Schema(
   baseOpts
 );
 
+const SettingsSchema = new Schema(
+  {
+    _key: { type: String, default: "global", unique: true },
+    alertWebhookUrl: { type: String, default: null },
+    adminPasswordHash: { type: String, default: null },
+  },
+  { ...baseOpts, id: false }
+);
+
 export const Server = model("Server", ServerSchema);
 export const Site = model("Site", SiteSchema);
 export const CloudflareConfig = model("CloudflareConfig", CloudflareConfigSchema);
 export const GitToken = model("GitToken", GitTokenSchema);
 export const Activity = model("Activity", ActivitySchema);
+export const Settings = model("Settings", SettingsSchema);
+
+export async function getSettings(): Promise<Record<string, unknown>> {
+  let s = await Settings.findOne({ _key: "global" });
+  if (!s) s = await Settings.create({ _key: "global" });
+  const obj = s.toObject() as Record<string, unknown>;
+  delete obj._key;
+  return obj;
+}
 
 async function repairMissingIds(): Promise<void> {
-  // Fix documents that were created before the id:false fix — they have no integer id field
   const collections = [
     { model: Server, name: "servers" },
     { model: Site, name: "sites" },
@@ -130,14 +177,12 @@ async function repairMissingIds(): Promise<void> {
   ];
 
   for (const { model: M, name } of collections) {
-    // Find docs that don't have an id field (or id is null/undefined)
     const broken = await M.collection.find({ id: { $exists: false } }).toArray();
     for (const doc of broken) {
       const newId = await nextId(name);
       await M.collection.updateOne({ _id: doc._id }, { $set: { id: newId } });
     }
     if (broken.length > 0) {
-      // Sync the counter to at least the highest id in the collection
       const maxDoc = await M.collection.findOne({}, { sort: { id: -1 } });
       if (maxDoc?.id) {
         await Counter.findByIdAndUpdate(

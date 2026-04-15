@@ -11,7 +11,7 @@ import {
   useListCloudflareConfigs,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText } from "lucide-react";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText, RotateCcw, RefreshCw, Play, Square, Timer, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
@@ -108,6 +108,13 @@ export default function Sites() {
   const [saveTokenLabel, setSaveTokenLabel] = useState("");
   const [showSaveToken, setShowSaveToken] = useState(false);
   const [showManageTokens, setShowManageTokens] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [uptimeMap, setUptimeMap] = useState<Record<number, { up: boolean; ms: number; statusCode: number } | null>>({});
+  const [pm2LoadingSet, setPm2LoadingSet] = useState<Set<number>>(new Set());
+  const [pm2LogsModal, setPm2LogsModal] = useState<{ name: string; output: string } | null>(null);
+  const [rollbackModal, setRollbackModal] = useState<{ siteId: number; name: string; commits: { sha: string; subject: string; date: string }[] } | null>(null);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+  const [sslRenewalLoading, setSslRenewalLoading] = useState<Set<number>>(new Set());
 
   const [repoBrowser, setRepoBrowser] = useState<{ open: boolean; loading: boolean; repos: GHRepo[]; search: string; error: string | null }>({ open: false, loading: false, repos: [], search: "", error: null });
 
@@ -292,6 +299,82 @@ export default function Sites() {
     setLiveDeployTarget({ id, name: site?.name ?? "Site" });
   }
 
+  async function checkUptime(id: number) {
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    try {
+      const r = await fetch(`${base}/api/sites/${id}/uptime`);
+      const d = await r.json() as { up: boolean; ms: number; statusCode: number };
+      setUptimeMap((prev) => ({ ...prev, [id]: d }));
+    } catch {
+      setUptimeMap((prev) => ({ ...prev, [id]: null }));
+    }
+  }
+
+  async function handlePm2Action(siteId: number, action: string, siteName: string) {
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    setPm2LoadingSet((prev) => new Set(prev).add(siteId));
+    try {
+      const r = await fetch(`${base}/api/sites/${siteId}/pm2/${action}`, { method: "POST" });
+      const d = await r.json() as { success: boolean; output: string };
+      if (action === "logs") {
+        setPm2LogsModal({ name: siteName, output: d.output });
+      } else {
+        toast({ title: d.success ? `PM2 ${action} succeeded` : `PM2 ${action} failed`, variant: d.success ? "default" : "destructive" });
+        queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
+      }
+    } catch {
+      toast({ title: "PM2 action failed", variant: "destructive" });
+    } finally {
+      setPm2LoadingSet((prev) => { const s = new Set(prev); s.delete(siteId); return s; });
+    }
+  }
+
+  async function handleRollbackOpen(siteId: number, siteName: string) {
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    try {
+      const r = await fetch(`${base}/api/sites/${siteId}/commits`);
+      const d = await r.json() as { commits: { sha: string; subject: string; date: string }[] };
+      setRollbackModal({ siteId, name: siteName, commits: d.commits ?? [] });
+    } catch {
+      toast({ title: "Failed to fetch commits", variant: "destructive" });
+    }
+  }
+
+  async function confirmRollback(sha: string) {
+    if (!rollbackModal) return;
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    setRollbackLoading(true);
+    try {
+      const r = await fetch(`${base}/api/sites/${rollbackModal.siteId}/rollback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sha }),
+      });
+      const d = await r.json() as { success: boolean; output: string };
+      setLogModal({ title: d.success ? "Rollback Successful" : "Rollback Failed", success: d.success, output: d.output });
+      queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
+    } catch {
+      toast({ title: "Rollback failed", variant: "destructive" });
+    } finally {
+      setRollbackLoading(false);
+      setRollbackModal(null);
+    }
+  }
+
+  async function handleSslRenewal(id: number) {
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    setSslRenewalLoading((prev) => new Set(prev).add(id));
+    try {
+      const r = await fetch(`${base}/api/sites/${id}/setup-ssl-renewal`, { method: "POST" });
+      const d = await r.json() as { success: boolean; output: string };
+      setLogModal({ title: "SSL Auto-Renewal Setup", success: d.success, output: d.output });
+    } catch {
+      toast({ title: "Failed to setup SSL renewal", variant: "destructive" });
+    } finally {
+      setSslRenewalLoading((prev) => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  }
+
   function handleSsl(id: number) {
     toast({ title: "Installing SSL...", description: "This may take a moment." });
     installSsl.mutate(
@@ -340,6 +423,12 @@ export default function Sites() {
     return `${base}/api/webhook/${token}`;
   }
 
+  const filteredSites = (sites ?? []).filter((s) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q);
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -355,6 +444,15 @@ export default function Sites() {
           <span className="hidden sm:inline">Deploy Site</span>
           <span className="sm:hidden">Deploy</span>
         </button>
+      </div>
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search sites by name or domain..."
+          className="w-full rounded-lg bg-card border border-border pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
       </div>
 
       {showForm && (
@@ -578,9 +676,17 @@ export default function Sites() {
             Deploy Site
           </button>
         </div>
+      ) : filteredSites.length === 0 && searchQuery ? (
+        <div className="rounded-xl border border-border bg-card p-8 text-center">
+          <p className="text-muted-foreground text-sm">No sites match "<span className="text-foreground">{searchQuery}</span>"</p>
+        </div>
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
-          {sites.map((site) => (
+          {filteredSites.map((site) => {
+            const uptime = uptimeMap[site.id];
+            const isNodeOrPy = site.siteType === "nodejs" || site.siteType === "python";
+            const pm2Loading = pm2LoadingSet.has(site.id);
+            return (
             <div key={site.id} className="px-4 py-3 sm:px-6 sm:py-4 space-y-2">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex-1 min-w-0">
@@ -589,6 +695,12 @@ export default function Sites() {
                     <span className={`text-xs border px-2 py-0.5 rounded-full capitalize ${statusColors[site.status] ?? statusColors.stopped}`}>
                       {site.status}
                     </span>
+                    {uptime !== undefined && uptime !== null && (
+                      <span className={`text-xs border px-2 py-0.5 rounded-full flex items-center gap-1 ${uptime.up ? "bg-emerald-900/40 text-emerald-400 border-emerald-800/50" : "bg-red-900/40 text-red-400 border-red-800/50"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${uptime.up ? "bg-emerald-400" : "bg-red-400"}`} />
+                        {uptime.up ? `Up ${uptime.ms}ms` : "Down"}
+                      </span>
+                    )}
                     {site.sslInstalled && (
                       <span className="text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">SSL</span>
                     )}
@@ -642,6 +754,66 @@ export default function Sites() {
                     >
                       <ScrollText className="h-3 w-3" />
                       Logs
+                    </button>
+                  )}
+                  {isNodeOrPy && site.status === "active" && (
+                    <>
+                      <button
+                        onClick={() => handlePm2Action(site.id, "restart", site.name)}
+                        disabled={pm2Loading}
+                        className="flex items-center gap-1.5 text-xs bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                        title="PM2 Restart"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Restart
+                      </button>
+                      <button
+                        onClick={() => handlePm2Action(site.id, "stop", site.name)}
+                        disabled={pm2Loading}
+                        className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                        title="PM2 Stop"
+                      >
+                        <Square className="h-3 w-3" />
+                        Stop
+                      </button>
+                      <button
+                        onClick={() => handlePm2Action(site.id, "logs", site.name)}
+                        disabled={pm2Loading}
+                        className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                        title="PM2 Logs"
+                      >
+                        <ScrollText className="h-3 w-3" />
+                        PM2 Logs
+                      </button>
+                    </>
+                  )}
+                  {site.repoUrl && (
+                    <button
+                      onClick={() => handleRollbackOpen(site.id, site.name)}
+                      className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors"
+                      title="Rollback to a previous commit"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Rollback
+                    </button>
+                  )}
+                  <button
+                    onClick={() => checkUptime(site.id)}
+                    className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors"
+                    title="Check if site is reachable"
+                  >
+                    <Timer className="h-3 w-3" />
+                    Ping
+                  </button>
+                  {site.sslInstalled && (
+                    <button
+                      onClick={() => handleSslRenewal(site.id)}
+                      disabled={sslRenewalLoading.has(site.id)}
+                      className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      title="Setup certbot auto-renewal cron"
+                    >
+                      <Timer className="h-3 w-3" />
+                      Auto-Renew
                     </button>
                   )}
                   {site.webhookToken && (
@@ -772,7 +944,60 @@ export default function Sites() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
+        </div>
+      )}
+
+      {rollbackModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h3 className="font-semibold">Rollback — {rollbackModal.name}</h3>
+              <button onClick={() => setRollbackModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-muted-foreground">Select a commit to roll back to. This will reset the code and restart the app.</p>
+              {rollbackModal.commits.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No commits found (no git repo at deploy path).</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {rollbackModal.commits.map((c) => (
+                    <button
+                      key={c.sha}
+                      disabled={rollbackLoading}
+                      onClick={() => confirmRollback(c.sha)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-background hover:bg-muted/50 border border-border text-left transition-colors disabled:opacity-50"
+                    >
+                      <span className="font-mono text-xs text-amber-400 shrink-0">{c.sha.slice(0, 8)}</span>
+                      <span className="text-sm flex-1 truncate">{c.subject}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{c.date}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pm2LogsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-2xl shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h3 className="font-semibold">PM2 Logs — {pm2LogsModal.name}</h3>
+              <button onClick={() => setPm2LogsModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <pre className="font-mono text-xs text-muted-foreground bg-black/40 rounded-lg p-4 max-h-96 overflow-y-auto whitespace-pre-wrap break-all">
+                {pm2LogsModal.output || "(no output)"}
+              </pre>
+            </div>
+          </div>
         </div>
       )}
 

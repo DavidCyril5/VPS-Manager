@@ -1,8 +1,9 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { verifyToken } from "./routes/auth";
 
 const app: Express = express();
 
@@ -11,16 +12,10 @@ app.use(
     logger,
     serializers: {
       req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
+        return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
       },
       res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
+        return { statusCode: res.statusCode };
       },
     },
   }),
@@ -28,6 +23,24 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use("/api", (req: Request, res: Response, next: NextFunction): void => {
+  const adminPassword = process.env["ADMIN_PASSWORD"];
+  if (!adminPassword) { next(); return; }
+
+  const skipPaths = ["/api/auth/login", "/api/auth/check", "/api/health"];
+  if (skipPaths.some((p) => req.path === p || req.path.startsWith(p))) { next(); return; }
+
+  if (req.path.includes("/webhook/")) { next(); return; }
+
+  const auth = req.headers["authorization"] ?? "";
+  const token = auth.replace("Bearer ", "");
+  if (!verifyToken(token)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 
 app.use("/api", router);
 

@@ -1,7 +1,7 @@
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { Client as SshClient } from "ssh2";
-import { connectDB, Server } from "./lib/db";
+import { connectDB, Server, decryptSecret } from "./lib/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 
@@ -110,9 +110,9 @@ wss.on("connection", (ws, req) => {
     };
 
     if (s.privateKey) {
-      connectOpts.privateKey = s.privateKey;
+      connectOpts.privateKey = decryptSecret(s.privateKey as string);
     } else {
-      connectOpts.password = s.password;
+      connectOpts.password = decryptSecret(s.password as string);
     }
 
     sshConn.connect(connectOpts as Parameters<InstanceType<typeof SshClient>["connect"]>[0]);

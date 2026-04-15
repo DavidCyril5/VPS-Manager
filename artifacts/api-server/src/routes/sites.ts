@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { Site, Server, Activity, CloudflareConfig, nextId } from "../lib/db";
+import { Site, Server, Activity, CloudflareConfig, Settings, nextId, decryptSecret, getSettings } from "../lib/db";
 import { getCloudflareZones, findMatchingZone, upsertDnsRecord, deleteDnsRecordByName } from "../lib/cloudflareApi";
 import {
   CreateSiteBody,
@@ -16,6 +16,35 @@ import {
 } from "@workspace/api-zod";
 import { runSshCommand, runSshCommandStream, runSshLiveStream } from "../lib/ssh";
 import crypto from "crypto";
+import https from "https";
+import http from "http";
+
+function getSshOpts(serverData: Record<string, unknown>) {
+  return {
+    host: serverData.host as string,
+    port: serverData.port as number,
+    username: serverData.username as string,
+    password: decryptSecret(serverData.password as string),
+    privateKey: serverData.privateKey ? decryptSecret(serverData.privateKey as string) : null,
+  };
+}
+
+async function sendAlertWebhook(siteName: string, domain: string, errorSummary: string): Promise<void> {
+  try {
+    const settings = await getSettings();
+    const url = settings.alertWebhookUrl as string | null;
+    if (!url) return;
+    const payload = JSON.stringify({ event: "deploy_failed", site: siteName, domain, error: errorSummary, timestamp: new Date().toISOString() });
+    const parsed = new URL(url);
+    const mod = parsed.protocol === "https:" ? https : http;
+    await new Promise<void>((resolve) => {
+      const req = mod.request(url, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } }, () => resolve());
+      req.on("error", () => resolve());
+      req.write(payload);
+      req.end();
+    });
+  } catch (_) {}
+}
 
 const router: IRouter = Router();
 
@@ -241,13 +270,7 @@ router.delete("/sites/:id", async (req, res): Promise<void> => {
   const server = await Server.findOne({ id: siteData.serverId });
   if (server) {
     const serverData = server.toObject() as Record<string, unknown>;
-    const sshOpts = {
-      host: serverData.host as string,
-      port: serverData.port as number,
-      username: serverData.username as string,
-      password: serverData.password as string,
-      privateKey: serverData.privateKey as string | null,
-    };
+    const sshOpts = getSshOpts(serverData);
     const pm2Name = domain.replace(/[^a-zA-Z0-9]/g, "-");
     const pm2Cleanup = (siteType === "nodejs" || siteType === "python")
       ? `pm2 delete "${pm2Name}" 2>/dev/null || true && pm2 save && `
@@ -317,13 +340,7 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
   parts.push(setupNginx);
   const fullScript = parts.join(" && ");
 
-  const sshOpts = {
-    host: serverData.host as string,
-    port: serverData.port as number,
-    username: serverData.username as string,
-    password: serverData.password as string,
-    privateKey: serverData.privateKey as string | null,
-  };
+  const sshOpts = getSshOpts(serverData);
 
   const result = await runSshCommand(sshOpts, fullScript, 180000);
   const newStatus = result.success ? "active" : "failed";
@@ -380,6 +397,10 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
     createdAt: new Date(),
   });
 
+  if (!result.success) {
+    sendAlertWebhook(siteData.name as string, domain, result.output.slice(-500)).catch(() => {});
+  }
+
   res.json({ ...result, output: result.output + dnsOutput });
 });
 
@@ -425,13 +446,7 @@ router.get("/sites/:id/deploy/stream", async (req, res): Promise<void> => {
 
   if (pm2Script) sendEvent({ type: "status", text: `Starting ${siteType} app with pm2...` });
 
-  const sshOpts = {
-    host: serverData.host as string,
-    port: serverData.port as number,
-    username: serverData.username as string,
-    password: serverData.password as string,
-    privateKey: serverData.privateKey as string | null,
-  };
+  const sshOpts = getSshOpts(serverData);
 
   const result = await runSshCommandStream(sshOpts, fullScript, (chunk) => {
     sendEvent({ type: "log", text: chunk });
@@ -492,6 +507,10 @@ router.get("/sites/:id/deploy/stream", async (req, res): Promise<void> => {
     createdAt: new Date(),
   });
 
+  if (!result.success) {
+    sendAlertWebhook(siteData.name as string, domain, result.output.slice(-500)).catch(() => {});
+  }
+
   sendEvent({ type: "done", success: result.success });
   res.end();
 });
@@ -523,13 +542,7 @@ router.get("/sites/:id/logs/stream", async (req, res): Promise<void> => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  const sshOpts = {
-    host: serverData.host as string,
-    port: serverData.port as number,
-    username: serverData.username as string,
-    password: serverData.password as string,
-    privateKey: serverData.privateKey as string | null,
-  };
+  const sshOpts = getSshOpts(serverData);
 
   const logFile = logType === "error"
     ? `/var/log/nginx/error.log`
@@ -573,13 +586,7 @@ router.post("/sites/:id/ssl", async (req, res): Promise<void> => {
 
   const domain = siteData.domain as string;
   const sslScript = `certbot --nginx -d ${domain} --non-interactive --agree-tos --email admin@${domain} --redirect`;
-  const sshOpts = {
-    host: serverData.host as string,
-    port: serverData.port as number,
-    username: serverData.username as string,
-    password: serverData.password as string,
-    privateKey: serverData.privateKey as string | null,
-  };
+  const sshOpts = getSshOpts(serverData);
 
   const result = await runSshCommand(sshOpts, sslScript, 120000);
 
@@ -634,7 +641,7 @@ router.get("/sites/:id/nginx-config", async (req, res): Promise<void> => {
 
   const domain = siteData.domain as string;
   const result = await runSshCommand(
-    { host: serverData.host as string, port: serverData.port as number, username: serverData.username as string, password: serverData.password as string, privateKey: serverData.privateKey as string | null },
+    getSshOpts(serverData),
     `cat /etc/nginx/sites-available/${domain} 2>/dev/null || echo "# Config not found for ${domain}"`,
     15000
   );
@@ -676,7 +683,7 @@ nginx -t && systemctl reload nginx
   `.trim();
 
   const result = await runSshCommand(
-    { host: serverData.host as string, port: serverData.port as number, username: serverData.username as string, password: serverData.password as string, privateKey: serverData.privateKey as string | null },
+    getSshOpts(serverData),
     script,
     30000
   );
@@ -711,7 +718,7 @@ router.get("/sites/:id/ssl-status", async (req, res): Promise<void> => {
   const domain = siteData.domain as string;
 
   const result = await runSshCommand(
-    { host: serverData.host as string, port: serverData.port as number, username: serverData.username as string, password: serverData.password as string, privateKey: serverData.privateKey as string | null },
+    getSshOpts(serverData),
     `certbot certificates -d ${domain} 2>/dev/null | grep "Expiry Date" | head -1`,
     20000
   );
@@ -787,13 +794,7 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
 
   await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
 
-  const sshOpts = {
-    host: serverData.host as string,
-    port: serverData.port as number,
-    username: serverData.username as string,
-    password: serverData.password as string,
-    privateKey: serverData.privateKey as string | null,
-  };
+  const sshOpts = getSshOpts(serverData);
 
   runSshCommand(sshOpts, deployScript, 120000).then(async (result) => {
     await Site.findOneAndUpdate(
@@ -816,6 +817,133 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
   }).catch(() => {});
 
   res.json({ success: true, message: `Deploy triggered for ${siteData.name}` });
+});
+
+// --- PM2 controls ---
+router.post("/sites/:id/pm2/:action", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const action = req.params.action as string;
+  if (!["restart", "stop", "start", "logs", "status"].includes(action)) {
+    res.status(400).json({ error: "Invalid PM2 action" }); return;
+  }
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const siteData = site.toObject() as Record<string, unknown>;
+  const server = await Server.findOne({ id: siteData.serverId });
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  const serverData = server.toObject() as Record<string, unknown>;
+  const pm2Name = (siteData.domain as string).replace(/[^a-zA-Z0-9]/g, "-");
+  let cmd = "";
+  if (action === "restart") cmd = `pm2 restart "${pm2Name}" 2>&1 || pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1`;
+  else if (action === "stop") cmd = `pm2 stop "${pm2Name}" 2>&1`;
+  else if (action === "start") cmd = `pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1`;
+  else if (action === "logs") cmd = `pm2 logs "${pm2Name}" --nostream --lines 80 2>&1`;
+  else if (action === "status") cmd = `pm2 show "${pm2Name}" 2>&1`;
+  const result = await runSshCommand(getSshOpts(serverData), cmd, 30000);
+  res.json(result);
+});
+
+// --- Live uptime check ---
+router.get("/sites/:id/uptime", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const siteData = site.toObject() as Record<string, unknown>;
+  const domain = siteData.domain as string;
+  const ssl = siteData.sslInstalled as boolean;
+  const url = ssl ? `https://${domain}` : `http://${domain}`;
+  const start = Date.now();
+  try {
+    const mod = ssl ? https : http;
+    const statusCode = await new Promise<number>((resolve, reject) => {
+      const r = mod.get(url, { headers: { "User-Agent": "VPS-Manager/1.0" }, timeout: 10000 }, (resp) => {
+        resp.resume();
+        resolve(resp.statusCode ?? 0);
+      });
+      r.on("error", reject);
+      r.on("timeout", () => { r.destroy(); reject(new Error("timeout")); });
+    });
+    const ms = Date.now() - start;
+    const up = statusCode >= 200 && statusCode < 400;
+    res.json({ up, statusCode, ms, url });
+  } catch (e: unknown) {
+    res.json({ up: false, statusCode: 0, ms: Date.now() - start, url, error: (e as Error).message });
+  }
+});
+
+// --- Git commit history (for rollback) ---
+router.get("/sites/:id/commits", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const siteData = site.toObject() as Record<string, unknown>;
+  const server = await Server.findOne({ id: siteData.serverId });
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  const serverData = server.toObject() as Record<string, unknown>;
+  const deployPath = siteData.deployPath as string;
+  const cmd = `cd "${deployPath}" && git log --oneline -10 --format="%H|||%s|||%cr" 2>&1`;
+  const result = await runSshCommand(getSshOpts(serverData), cmd, 15000);
+  if (!result.success) { res.json({ commits: [], error: result.output }); return; }
+  const commits = result.output.trim().split("\n").filter(Boolean).map((line) => {
+    const [sha, subject, date] = line.split("|||");
+    return { sha: (sha ?? "").trim(), subject: (subject ?? "").trim(), date: (date ?? "").trim() };
+  });
+  res.json({ commits });
+});
+
+// --- Deployment rollback ---
+router.post("/sites/:id/rollback", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const { sha } = req.body as { sha?: string };
+  if (!sha) { res.status(400).json({ error: "sha is required" }); return; }
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const siteData = site.toObject() as Record<string, unknown>;
+  const server = await Server.findOne({ id: siteData.serverId });
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  const serverData = server.toObject() as Record<string, unknown>;
+  const deployPath = siteData.deployPath as string;
+  const domain = siteData.domain as string;
+  const { deployScript, pm2Script, setupNginx } = buildDeployParts(siteData);
+  const resetCmd = `cd "${deployPath}" && git reset --hard "${sha.replace(/[^a-f0-9]/g, "")}" 2>&1`;
+  const buildCmd = siteData.buildCommand ? `cd "${deployPath}" && ${siteData.buildCommand} 2>&1` : null;
+  const parts = [resetCmd];
+  if (buildCmd) parts.push(buildCmd);
+  if (pm2Script) parts.push(pm2Script);
+  const fullScript = parts.join(" && ");
+  await Site.findOneAndUpdate({ id }, { status: "deploying", updatedAt: new Date() });
+  const result = await runSshCommand(getSshOpts(serverData), fullScript, 180000);
+  await Site.findOneAndUpdate({ id }, { status: result.success ? "active" : "failed", updatedAt: new Date() });
+  const actId = await nextId("activity");
+  await Activity.create({
+    id: actId,
+    siteId: id,
+    serverId: serverData.id,
+    type: "deploy",
+    status: result.success ? "success" : "failure",
+    message: result.success ? `Rolled back ${siteData.name} to ${sha.slice(0, 8)}` : `Rollback of ${siteData.name} failed`,
+    details: result.output,
+    createdAt: new Date(),
+  });
+  if (!result.success) {
+    sendAlertWebhook(siteData.name as string, domain, result.output.slice(-500)).catch(() => {});
+  }
+  res.json(result);
+});
+
+// --- SSL auto-renewal setup ---
+router.post("/sites/:id/setup-ssl-renewal", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const siteData = site.toObject() as Record<string, unknown>;
+  const server = await Server.findOne({ id: siteData.serverId });
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  const serverData = server.toObject() as Record<string, unknown>;
+  const cronLine = "0 3 * * * /usr/bin/certbot renew --quiet --post-hook 'systemctl reload nginx' >> /var/log/certbot-renew.log 2>&1";
+  const cmd = `(crontab -l 2>/dev/null | grep -v 'certbot renew'; echo '${cronLine}') | crontab - && echo "SSL auto-renewal cron configured" 2>&1`;
+  const result = await runSshCommand(getSshOpts(serverData), cmd, 15000);
+  res.json(result);
 });
 
 export default router;

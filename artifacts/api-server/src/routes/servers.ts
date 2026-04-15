@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { Server, Activity, nextId } from "../lib/db";
+import { Server, Activity, nextId, encryptSecret, decryptSecret } from "../lib/db";
 import {
   CreateServerBody,
   UpdateServerBody,
@@ -31,7 +31,10 @@ router.post("/servers", async (req, res): Promise<void> => {
     return;
   }
   const id = await nextId("servers");
-  const server = await Server.create({ id, ...parsed.data, createdAt: new Date(), updatedAt: new Date() });
+  const data = { ...parsed.data };
+  if (data.password) data.password = encryptSecret(data.password);
+  if (data.privateKey) data.privateKey = encryptSecret(data.privateKey);
+  const server = await Server.create({ id, ...data, createdAt: new Date(), updatedAt: new Date() });
   res.status(201).json(safeServer(server.toObject() as Record<string, unknown>));
 });
 
@@ -60,9 +63,12 @@ router.patch("/servers/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const updateData = { ...parsed.data } as Record<string, unknown>;
+  if (updateData.password) updateData.password = encryptSecret(updateData.password as string);
+  if (updateData.privateKey) updateData.privateKey = encryptSecret(updateData.privateKey as string);
   const server = await Server.findOneAndUpdate(
     { id: params.data.id },
-    { ...parsed.data, updatedAt: new Date() },
+    { ...updateData, updatedAt: new Date() },
     { returnDocument: "after" }
   );
   if (!server) {
@@ -103,8 +109,8 @@ router.post("/servers/:id/test-connection", async (req, res): Promise<void> => {
     host: s.host as string,
     port: s.port as number,
     username: s.username as string,
-    password: s.password as string,
-    privateKey: s.privateKey as string | null,
+    password: decryptSecret(s.password as string),
+    privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null,
   });
 
   await Server.findOneAndUpdate(
@@ -151,7 +157,7 @@ router.post("/servers/:id/install-nginx", async (req, res): Promise<void> => {
   `.trim();
 
   const result = await runSshCommand(
-    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey as string | null },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
     installScript,
     120000
   );
@@ -195,7 +201,7 @@ router.get("/servers/:id/stats", async (req, res): Promise<void> => {
   `.trim();
 
   const result = await runSshCommand(
-    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey as string | null },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
     statsCmd,
     20000
   );

@@ -42,10 +42,12 @@ Pages:
 - `/` — Dashboard with stats and recent activity
 - `/servers` — List/add/remove VPS servers, test SSH, install Nginx
 - `/servers/:id` — Server detail: stats (CPU/memory/disk), actions
-- `/sites` — List/create/deploy/delete websites; Nginx config editor, SSL expiry badge, webhook URL
+- `/sites` — List/create/deploy/delete websites; search/filter, Nginx config editor, SSL expiry badge, webhook URL, Ping uptime check, PM2 controls (restart/stop/logs), rollback to previous Git commit, Auto-Renew SSL
 - `/terminal` — Live SSH terminal (xterm.js + WebSocket)
 - `/cloudflare` — Add Cloudflare accounts, create DNS A records
 - `/activity` — Deployment activity log
+- `/settings` — Deploy failure alert webhook URL, admin password change
+- `/login` — Password login page (shown when `ADMIN_PASSWORD` env var is set)
 
 ### API Server (Express 5, previewPath: /api)
 
@@ -67,18 +69,33 @@ Routes:
 - `GET /api/dashboard/summary` — Stats summary
 - `GET/PUT /api/sites/:id/nginx-config` — Read/write nginx config via SSH
 - `GET /api/sites/:id/ssl-status` — Live SSL expiry check via certbot
+- `GET /api/sites/:id/uptime` — Live HTTP ping check
+- `POST /api/sites/:id/pm2/:action` — PM2 process control (restart/stop/logs)
+- `GET /api/sites/:id/commits` — Recent Git commits for rollback
+- `POST /api/sites/:id/rollback` — Roll back to a previous Git commit
+- `POST /api/sites/:id/setup-ssl-renewal` — Install certbot cron auto-renewal
 - `POST /api/webhook/:token` — Auto-deploy trigger (public, no auth)
 - `WS /api/terminal?serverId=N` — WebSocket SSH shell (xterm.js)
+- `POST /api/auth/login` — Password login, returns JWT token
+- `GET /api/auth/check` — Verify auth token / check if auth is enabled
+- `GET/POST /api/settings` — Get/set alert webhook URL and admin password
 
 ### MongoDB Collections (via Mongoose)
 
-- `servers` — SSH connection info, status, nginx flag; integer `id` via counter
+- `servers` — SSH connection info (AES-256-GCM encrypted credentials), status, nginx flag; integer `id` via counter
 - `sites` — Domain, repo, deploy path, type, status, webhook token, ssl expiry
 - `cloudflareconfigs` — CF API tokens
 - `activity` — Deployment event log
 - `counters` — Auto-increment ID sequences
+- `settings` — Global config (alertWebhookUrl, adminPasswordHash)
+
+### Security
+
+- SSH credentials encrypted at rest using AES-256-GCM (`ENCRYPTION_KEY` env var)
+- Auth protected by Bearer token (JWT-like) issued on login; enabled via `ADMIN_PASSWORD` env var
+- Webhook endpoints and health check are excluded from auth middleware
 
 ### SSH Library
 
-Uses `ssh2` package for SSH connections. Credentials stored in DB and used per-request.
+Uses `ssh2` package for SSH connections. Credentials decrypted per-request; legacy plain-text values handled transparently.
 Native crypto module optional (falls back to pure JS).
