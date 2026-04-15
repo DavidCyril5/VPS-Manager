@@ -172,14 +172,16 @@ router.post("/sites/:id/deploy", async (req, res): Promise<void> => {
     const cloneUrl = repoToken
       ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
       : repoUrl;
-    deployScript = [
+    const gitBlock = [
       `if [ -d "${deployPath}/.git" ]; then`,
       `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
       `else`,
       `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
       `fi`,
-      buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : "",
-    ].filter(Boolean).join("\n");
+    ].join("\n");
+    deployScript = buildCommand
+      ? `${gitBlock} && cd ${deployPath} && ${buildCommand}`
+      : gitBlock;
   } else {
     deployScript = `mkdir -p ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
   }
@@ -492,14 +494,16 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
     ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
     : repoUrl;
 
-  const deployScript = [
+  const gitBlock = [
     `if [ -d "${deployPath}/.git" ]; then`,
     `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
     `else`,
     `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
     `fi`,
-    buildCommand ? `&& cd ${deployPath} && ${buildCommand}` : "",
-  ].filter(Boolean).join("\n");
+  ].join("\n");
+  const deployScript = buildCommand
+    ? `${gitBlock} && cd ${deployPath} && ${buildCommand}`
+    : gitBlock;
 
   await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
 
