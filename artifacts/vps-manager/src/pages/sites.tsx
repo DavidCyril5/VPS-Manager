@@ -10,13 +10,14 @@ import {
   useUpdateSite,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X } from "lucide-react";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
 import { NginxConfigModal } from "@/components/nginx-config-modal";
 
 interface GitToken { id: number; label: string; host: string; }
+interface GHRepo { full_name: string; clone_url: string; private: boolean; description: string | null; updated_at: string; }
 
 function useGitTokens() {
   const [tokens, setTokens] = useState<GitToken[]>([]);
@@ -101,6 +102,8 @@ export default function Sites() {
   const [showSaveToken, setShowSaveToken] = useState(false);
   const [showManageTokens, setShowManageTokens] = useState(false);
 
+  const [repoBrowser, setRepoBrowser] = useState<{ open: boolean; loading: boolean; repos: GHRepo[]; search: string; error: string | null }>({ open: false, loading: false, repos: [], search: "", error: null });
+
   const [form, setForm] = useState({
     serverId: 0,
     name: "",
@@ -178,6 +181,34 @@ export default function Sites() {
     if (!id) return;
     const token = await resolveToken(id);
     setEditForm((f) => ({ ...f, repoToken: token }));
+  }
+
+  async function fetchRepos(token?: string) {
+    const t = token ?? form.repoToken;
+    if (!t) return;
+    setRepoBrowser((b) => ({ ...b, open: true, loading: true, repos: [], error: null, search: "" }));
+    try {
+      const all: GHRepo[] = [];
+      let page = 1;
+      while (true) {
+        const r = await fetch(`https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`, {
+          headers: { Authorization: `Bearer ${t}`, Accept: "application/vnd.github+json" },
+        });
+        if (!r.ok) { setRepoBrowser((b) => ({ ...b, loading: false, error: `GitHub error: ${r.status} ${r.statusText}` })); return; }
+        const data = await r.json() as GHRepo[];
+        all.push(...data);
+        if (data.length < 100) break;
+        page++;
+      }
+      setRepoBrowser((b) => ({ ...b, loading: false, repos: all }));
+    } catch {
+      setRepoBrowser((b) => ({ ...b, loading: false, error: "Failed to fetch repos. Check your token." }));
+    }
+  }
+
+  function selectRepo(repo: GHRepo) {
+    setForm((f) => ({ ...f, repoUrl: repo.clone_url }));
+    setRepoBrowser((b) => ({ ...b, open: false }));
   }
 
   const defaultPaths = ["/var/www/html", ""];
@@ -346,16 +377,63 @@ export default function Sites() {
                 <option value="python">Python</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1">Repo URL (optional)</label>
+            <div className="col-span-2 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm text-muted-foreground">Repo URL (optional)</label>
+                {form.repoToken && (
+                  <button type="button" onClick={() => fetchRepos()} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+                    <BookOpen className="h-3 w-3" />
+                    Browse my repos
+                  </button>
+                )}
+              </div>
               <input name="repoUrl" value={form.repoUrl} onChange={handleChange} placeholder="https://github.com/user/repo" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              {repoBrowser.open && (
+                <div className="border border-border rounded-lg bg-background overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+                    <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <input
+                      autoFocus
+                      value={repoBrowser.search}
+                      onChange={(e) => setRepoBrowser((b) => ({ ...b, search: e.target.value }))}
+                      placeholder="Search repos..."
+                      className="flex-1 bg-transparent text-sm focus:outline-none"
+                    />
+                    <button type="button" onClick={() => setRepoBrowser((b) => ({ ...b, open: false }))} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {repoBrowser.loading && <p className="text-sm text-muted-foreground px-4 py-3">Loading repos...</p>}
+                    {repoBrowser.error && <p className="text-sm text-red-400 px-4 py-3">{repoBrowser.error}</p>}
+                    {!repoBrowser.loading && !repoBrowser.error && repoBrowser.repos
+                      .filter((r) => r.full_name.toLowerCase().includes(repoBrowser.search.toLowerCase()))
+                      .map((repo) => (
+                        <button
+                          key={repo.full_name}
+                          type="button"
+                          onClick={() => selectRepo(repo)}
+                          className="w-full flex items-start gap-3 px-4 py-2.5 hover:bg-muted/50 text-left transition-colors"
+                        >
+                          {repo.private ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" /> : <Unlock className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{repo.full_name}</p>
+                            {repo.description && <p className="text-xs text-muted-foreground truncate">{repo.description}</p>}
+                          </div>
+                        </button>
+                      ))
+                    }
+                    {!repoBrowser.loading && !repoBrowser.error && repoBrowser.repos.length === 0 && (
+                      <p className="text-sm text-muted-foreground px-4 py-3">No repos found.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <label className="block text-sm text-muted-foreground mb-1">Access Token (optional)</label>
               {gitTokens.length > 0 && (
                 <select
                   defaultValue=""
-                  onChange={(e) => { if (e.target.value) handleSelectSavedToken(Number(e.target.value)); }}
+                  onChange={async (e) => { if (e.target.value) { const tok = await resolveToken(Number(e.target.value)); setForm((f) => ({ ...f, repoToken: tok })); fetchRepos(tok); } }}
                   className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">— Use saved token —</option>
@@ -366,6 +444,11 @@ export default function Sites() {
               )}
               <div className="flex gap-2">
                 <input name="repoToken" type="password" value={form.repoToken} onChange={handleChange} placeholder="ghp_xxxxx or select saved token above" className="flex-1 rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                {form.repoToken && (
+                  <button type="button" onClick={() => fetchRepos()} title="Browse your GitHub repos" className="flex items-center gap-1 text-xs bg-muted hover:bg-muted/70 px-3 py-2 rounded-lg transition-colors">
+                    <BookOpen className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 {form.repoToken && (
                   <button type="button" onClick={() => setShowSaveToken(!showSaveToken)} className="flex items-center gap-1 text-xs bg-muted px-3 py-2 rounded-lg hover:opacity-80" title="Save token for later">
                     <Save className="h-3 w-3" />
