@@ -90,13 +90,21 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       : `npm run start`;
     const startCommand = (siteData.startCommand as string | null) || defaultStart;
     const pm2Name = domain.replace(/[^a-zA-Z0-9]/g, "-");
+    const pm2ConfigPath = `/tmp/pm2-${pm2Name}.json`;
+    // Use a JSON config file so pm2 always receives the correct PORT env var,
+    // even when running as a daemon that doesn't inherit the shell's environment.
+    const pm2Config = JSON.stringify({
+      name: pm2Name,
+      script: siteType === "python" ? startCommand : "npm",
+      args: siteType === "python" ? undefined : "run start",
+      cwd: deployPath,
+      env: { PORT: String(appPort), NODE_ENV: "production" },
+    });
     pm2Script = [
       `command -v pm2 >/dev/null 2>&1 || npm install -g pm2`,
       `cd ${deployPath}`,
-      // restart if already running, otherwise start fresh
-      `pm2 describe "${pm2Name}" >/dev/null 2>&1`
-        + ` && pm2 restart "${pm2Name}" --update-env`
-        + ` || PORT=${appPort} pm2 start "${startCommand}" --name "${pm2Name}"`,
+      `echo '${pm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`,
+      `pm2 startOrRestart ${pm2ConfigPath}`,
       `pm2 save`,
     ].join(" && ");
   }
