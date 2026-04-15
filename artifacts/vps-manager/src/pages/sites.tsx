@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
 import { NginxConfigModal } from "@/components/nginx-config-modal";
+import { LiveLogModal } from "@/components/live-log-modal";
 
 interface GitToken { id: number; label: string; host: string; }
 interface GHRepo { full_name: string; clone_url: string; private: boolean; description: string | null; updated_at: string; }
@@ -96,6 +97,7 @@ export default function Sites() {
   });
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
+  const [liveDeployTarget, setLiveDeployTarget] = useState<{ id: number; name: string } | null>(null);
   const [nginxModal, setNginxModal] = useState<{ siteId: number; domain: string } | null>(null);
   const [webhookVisible, setWebhookVisible] = useState<Set<number>>(new Set());
   const [saveTokenLabel, setSaveTokenLabel] = useState("");
@@ -268,21 +270,8 @@ export default function Sites() {
   }
 
   function handleDeploy(id: number) {
-    toast({ title: "Deploying...", description: "This may take a moment." });
-    deploySite.mutate(
-      { id },
-      {
-        onSuccess: (result) => {
-          queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
-          setLogModal({
-            title: result.success ? "Deploy Successful" : "Deploy Failed",
-            success: result.success,
-            output: result.output,
-          });
-        },
-        onError: () => toast({ title: "Deploy failed", variant: "destructive" }),
-      }
-    );
+    const site = sites?.find((s) => s.id === id);
+    setLiveDeployTarget({ id, name: site?.name ?? "Site" });
   }
 
   function handleSsl(id: number) {
@@ -736,6 +725,14 @@ export default function Sites() {
           onOpenChange={(open) => { if (!open) setNginxModal(null); }}
           siteId={nginxModal.siteId}
           domain={nginxModal.domain}
+        />
+      )}
+
+      {liveDeployTarget && (
+        <LiveLogModal
+          siteId={liveDeployTarget.id}
+          siteName={liveDeployTarget.name}
+          onClose={() => setLiveDeployTarget(null)}
         />
       )}
     </div>
