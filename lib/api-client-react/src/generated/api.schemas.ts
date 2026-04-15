@@ -109,7 +109,11 @@ export interface Site {
   siteType: SiteSiteType;
   status: SiteStatus;
   sslInstalled: boolean;
+  /** @nullable */
+  sslExpiresAt?: string | null;
   autoSync: boolean;
+  /** @nullable */
+  webhookToken?: string | null;
   /** @nullable */
   lastDeployedAt?: string | null;
   createdAt: string;
@@ -227,6 +231,24 @@ export interface ActivityEntry {
   /** @nullable */
   details?: string | null;
   createdAt: string;
+}
+
+export interface NginxConfigResult {
+  config: string;
+  domain: string;
+}
+
+export interface UpdateNginxConfigBody {
+  config: string;
+}
+
+export interface SslStatusResult {
+  installed: boolean;
+  /** @nullable */
+  expiresAt?: string | null;
+  /** @nullable */
+  daysRemaining?: number | null;
+  domain: string;
 }
 
 export interface DashboardSummary {

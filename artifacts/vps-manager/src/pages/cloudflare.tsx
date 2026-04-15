@@ -10,12 +10,15 @@ import {
 } from "@workspace/api-client-react";
 import { Cloud, Plus, Trash2, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { LogModal } from "@/components/log-modal";
 
 function ZoneManager({ configId, serverIp }: { configId: number; serverIp?: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [dnsForm, setDnsForm] = useState({ zoneId: "", domain: "", ip: serverIp ?? "", proxied: true });
+  const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
   const { data: zones, isLoading } = useGetCloudflareZones(configId, { query: { enabled: expanded } });
   const createDns = useCreateDnsRecord();
 
@@ -25,10 +28,10 @@ function ZoneManager({ configId, serverIp }: { configId: number; serverIp?: stri
       { id: configId, data: dnsForm },
       {
         onSuccess: (result) => {
-          toast({
-            title: result.success ? "DNS record created" : "DNS creation failed",
-            description: result.output,
-            variant: result.success ? "default" : "destructive",
+          setLogModal({
+            title: result.success ? "DNS Record Created" : "DNS Creation Failed",
+            success: result.success,
+            output: result.output,
           });
           queryClient.invalidateQueries({ queryKey: getListCloudflareConfigsQueryKey() });
         },
@@ -98,6 +101,16 @@ function ZoneManager({ configId, serverIp }: { configId: number; serverIp?: stri
           </form>
         </div>
       )}
+
+      {logModal && (
+        <LogModal
+          open={!!logModal}
+          onOpenChange={(open) => { if (!open) setLogModal(null); }}
+          title={logModal.title}
+          success={logModal.success}
+          output={logModal.output}
+        />
+      )}
     </div>
   );
 }
@@ -110,6 +123,7 @@ export default function CloudflarePage() {
   const deleteConfig = useDeleteCloudflareConfig();
 
   const [showForm, setShowForm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState({ label: "", email: "", apiToken: "", zoneId: "" });
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -133,10 +147,10 @@ export default function CloudflarePage() {
     );
   }
 
-  function handleDelete(id: number) {
-    if (!confirm("Remove this Cloudflare account?")) return;
+  function confirmDelete() {
+    if (!deleteTarget) return;
     deleteConfig.mutate(
-      { id },
+      { id: deleteTarget },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListCloudflareConfigsQueryKey() });
@@ -145,6 +159,7 @@ export default function CloudflarePage() {
         onError: () => toast({ title: "Failed to remove", variant: "destructive" }),
       }
     );
+    setDeleteTarget(null);
   }
 
   return (
@@ -200,7 +215,11 @@ export default function CloudflarePage() {
       ) : !configs || configs.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-12 text-center">
           <Cloud className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">No Cloudflare accounts yet. Add one to manage DNS and SSL.</p>
+          <p className="font-medium text-muted-foreground">No Cloudflare accounts</p>
+          <p className="text-sm text-muted-foreground mt-1">Add a Cloudflare account to manage DNS and SSL for your domains.</p>
+          <button onClick={() => setShowForm(true)} className="mt-4 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90">
+            Add Account
+          </button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -213,7 +232,7 @@ export default function CloudflarePage() {
                   {config.zoneId && <div className="text-xs text-muted-foreground mt-1 font-mono">Zone: {config.zoneId}</div>}
                 </div>
                 <button
-                  onClick={() => handleDelete(config.id)}
+                  onClick={() => setDeleteTarget(config.id)}
                   className="p-2 text-muted-foreground hover:text-red-400 transition-colors"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -224,6 +243,15 @@ export default function CloudflarePage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Remove Cloudflare Account"
+        description="This will remove this Cloudflare account from the manager. DNS records on Cloudflare will not be deleted."
+        confirmLabel="Remove Account"
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

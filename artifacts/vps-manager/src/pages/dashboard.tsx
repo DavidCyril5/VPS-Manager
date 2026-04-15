@@ -17,8 +17,8 @@ const typeLabels: Record<string, string> = {
 };
 
 export default function Dashboard() {
-  const { data: summary, isLoading } = useGetDashboardSummary();
-  const { data: activity } = useListActivity();
+  const { data: summary, isLoading } = useGetDashboardSummary({ query: { refetchInterval: 30000 } });
+  const { data: activity } = useListActivity({ query: { refetchInterval: 30000 } });
 
   const stats = [
     { label: "Total Servers", value: summary?.totalServers ?? 0, icon: Server, color: "text-blue-400" },
@@ -52,8 +52,10 @@ export default function Dashboard() {
           Recent Activity
         </h2>
         {!activity || activity.length === 0 ? (
-          <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">
-            No activity yet. Add a server and deploy a site to get started.
+          <div className="rounded-xl border border-border bg-card p-8 text-center">
+            <Activity className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground font-medium">No activity yet</p>
+            <p className="text-sm text-muted-foreground mt-1">Add a server and deploy a site to get started.</p>
           </div>
         ) : (
           <div className="rounded-xl border border-border bg-card divide-y divide-border">

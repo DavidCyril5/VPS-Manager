@@ -154,7 +154,9 @@ export const ListSitesResponseItem = zod.object({
   siteType: zod.enum(["static", "nodejs", "php", "python"]),
   status: zod.enum(["deploying", "active", "failed", "stopped"]),
   sslInstalled: zod.boolean(),
+  sslExpiresAt: zod.string().nullish(),
   autoSync: zod.boolean(),
+  webhookToken: zod.string().nullish(),
   lastDeployedAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -195,7 +197,9 @@ export const GetSiteResponse = zod.object({
   siteType: zod.enum(["static", "nodejs", "php", "python"]),
   status: zod.enum(["deploying", "active", "failed", "stopped"]),
   sslInstalled: zod.boolean(),
+  sslExpiresAt: zod.string().nullish(),
   autoSync: zod.boolean(),
+  webhookToken: zod.string().nullish(),
   lastDeployedAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -230,7 +234,9 @@ export const UpdateSiteResponse = zod.object({
   siteType: zod.enum(["static", "nodejs", "php", "python"]),
   status: zod.enum(["deploying", "active", "failed", "stopped"]),
   sslInstalled: zod.boolean(),
+  sslExpiresAt: zod.string().nullish(),
   autoSync: zod.boolean(),
+  webhookToken: zod.string().nullish(),
   lastDeployedAt: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -267,6 +273,49 @@ export const InstallSslResponse = zod.object({
   success: zod.boolean(),
   output: zod.string(),
   error: zod.string().nullish(),
+});
+
+/**
+ * @summary Get the Nginx config for a site
+ */
+export const GetNginxConfigParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetNginxConfigResponse = zod.object({
+  config: zod.string(),
+  domain: zod.string(),
+});
+
+/**
+ * @summary Update the Nginx config for a site
+ */
+export const UpdateNginxConfigParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateNginxConfigBody = zod.object({
+  config: zod.string(),
+});
+
+export const UpdateNginxConfigResponse = zod.object({
+  success: zod.boolean(),
+  output: zod.string(),
+  error: zod.string().nullish(),
+});
+
+/**
+ * @summary Get SSL certificate status and expiry
+ */
+export const GetSslStatusParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetSslStatusResponse = zod.object({
+  installed: zod.boolean(),
+  expiresAt: zod.string().nullish(),
+  daysRemaining: zod.number().nullish(),
+  domain: zod.string(),
 });
 
 /**

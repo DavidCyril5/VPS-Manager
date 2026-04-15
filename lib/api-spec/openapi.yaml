@@ -350,6 +350,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/CommandResult"
 
+  /sites/{id}/nginx-config:
+    get:
+      operationId: getNginxConfig
+      tags: [sites]
+      summary: Get the Nginx config for a site
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Nginx config content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NginxConfigResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateNginxConfig
+      tags: [sites]
+      summary: Update the Nginx config for a site
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNginxConfigBody"
+      responses:
+        "200":
+          description: Update result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+
+  /sites/{id}/ssl-status:
+    get:
+      operationId: getSslStatus
+      tags: [sites]
+      summary: Get SSL certificate status and expiry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SSL status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SslStatusResult"
+
   /cloudflare:
     get:
       operationId: listCloudflareConfigs
@@ -648,8 +715,12 @@ components:
           enum: [deploying, active, failed, stopped]
         sslInstalled:
           type: boolean
+        sslExpiresAt:
+          type: ["string", "null"]
         autoSync:
           type: boolean
+        webhookToken:
+          type: ["string", "null"]
         lastDeployedAt:
           type: ["string", "null"]
         createdAt:
@@ -809,6 +880,40 @@ components:
         - status
         - message
         - createdAt
+
+    NginxConfigResult:
+      type: object
+      properties:
+        config:
+          type: string
+        domain:
+          type: string
+      required:
+        - config
+        - domain
+
+    UpdateNginxConfigBody:
+      type: object
+      properties:
+        config:
+          type: string
+      required:
+        - config
+
+    SslStatusResult:
+      type: object
+      properties:
+        installed:
+          type: boolean
+        expiresAt:
+          type: ["string", "null"]
+        daysRemaining:
+          type: ["integer", "null"]
+        domain:
+          type: string
+      required:
+        - installed
+        - domain
 
     DashboardSummary:
       type: object

@@ -29,9 +29,12 @@ import type {
   DashboardSummary,
   ErrorResponse,
   HealthStatus,
+  NginxConfigResult,
   Server,
   ServerStats,
   Site,
+  SslStatusResult,
+  UpdateNginxConfigBody,
   UpdateServerBody,
   UpdateSiteBody,
 } from "./api.schemas";
@@ -1357,6 +1360,267 @@ export const useInstallSsl = <
 > => {
   return useMutation(getInstallSslMutationOptions(options));
 };
+
+/**
+ * @summary Get the Nginx config for a site
+ */
+export const getGetNginxConfigUrl = (id: number) => {
+  return `/api/sites/${id}/nginx-config`;
+};
+
+export const getNginxConfig = async (
+  id: number,
+  options?: RequestInit,
+): Promise<NginxConfigResult> => {
+  return customFetch<NginxConfigResult>(getGetNginxConfigUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetNginxConfigQueryKey = (id: number) => {
+  return [`/api/sites/${id}/nginx-config`] as const;
+};
+
+export const getGetNginxConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNginxConfig>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNginxConfig>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetNginxConfigQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getNginxConfig>>> = ({
+    signal,
+  }) => getNginxConfig(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNginxConfig>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetNginxConfigQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getNginxConfig>>
+>;
+export type GetNginxConfigQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get the Nginx config for a site
+ */
+
+export function useGetNginxConfig<
+  TData = Awaited<ReturnType<typeof getNginxConfig>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNginxConfig>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetNginxConfigQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update the Nginx config for a site
+ */
+export const getUpdateNginxConfigUrl = (id: number) => {
+  return `/api/sites/${id}/nginx-config`;
+};
+
+export const updateNginxConfig = async (
+  id: number,
+  updateNginxConfigBody: UpdateNginxConfigBody,
+  options?: RequestInit,
+): Promise<CommandResult> => {
+  return customFetch<CommandResult>(getUpdateNginxConfigUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateNginxConfigBody),
+  });
+};
+
+export const getUpdateNginxConfigMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateNginxConfig>>,
+    TError,
+    { id: number; data: BodyType<UpdateNginxConfigBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateNginxConfig>>,
+  TError,
+  { id: number; data: BodyType<UpdateNginxConfigBody> },
+  TContext
+> => {
+  const mutationKey = ["updateNginxConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateNginxConfig>>,
+    { id: number; data: BodyType<UpdateNginxConfigBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateNginxConfig(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateNginxConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateNginxConfig>>
+>;
+export type UpdateNginxConfigMutationBody = BodyType<UpdateNginxConfigBody>;
+export type UpdateNginxConfigMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update the Nginx config for a site
+ */
+export const useUpdateNginxConfig = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateNginxConfig>>,
+    TError,
+    { id: number; data: BodyType<UpdateNginxConfigBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateNginxConfig>>,
+  TError,
+  { id: number; data: BodyType<UpdateNginxConfigBody> },
+  TContext
+> => {
+  return useMutation(getUpdateNginxConfigMutationOptions(options));
+};
+
+/**
+ * @summary Get SSL certificate status and expiry
+ */
+export const getGetSslStatusUrl = (id: number) => {
+  return `/api/sites/${id}/ssl-status`;
+};
+
+export const getSslStatus = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SslStatusResult> => {
+  return customFetch<SslStatusResult>(getGetSslStatusUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSslStatusQueryKey = (id: number) => {
+  return [`/api/sites/${id}/ssl-status`] as const;
+};
+
+export const getGetSslStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSslStatus>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSslStatus>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSslStatusQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSslStatus>>> = ({
+    signal,
+  }) => getSslStatus(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSslStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSslStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSslStatus>>
+>;
+export type GetSslStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get SSL certificate status and expiry
+ */
+
+export function useGetSslStatus<
+  TData = Awaited<ReturnType<typeof getSslStatus>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSslStatus>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSslStatusQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List Cloudflare configurations

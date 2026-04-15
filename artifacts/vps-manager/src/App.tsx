@@ -9,6 +9,7 @@ import ServerDetail from "@/pages/server-detail";
 import Sites from "@/pages/sites";
 import CloudflarePage from "@/pages/cloudflare";
 import ActivityPage from "@/pages/activity";
+import TerminalPage from "@/pages/terminal";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ function Router() {
         <Route path="/sites" component={Sites} />
         <Route path="/cloudflare" component={CloudflarePage} />
         <Route path="/activity" component={ActivityPage} />
+        <Route path="/terminal" component={TerminalPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

@@ -8,9 +8,11 @@ import {
   useInstallNginx,
   getListServersQueryKey,
 } from "@workspace/api-client-react";
-import { Server, Plus, Trash2, Wifi, WifiOff, Settings2, CheckCircle2, XCircle } from "lucide-react";
+import { Server, Plus, Trash2, Wifi, Settings2, CheckCircle2, XCircle, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { LogModal } from "@/components/log-modal";
 
 const statusIcon: Record<string, React.ReactNode> = {
   connected: <CheckCircle2 className="h-4 w-4 text-emerald-400" />,
@@ -21,13 +23,15 @@ const statusIcon: Record<string, React.ReactNode> = {
 export default function Servers() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: servers, isLoading } = useListServers();
+  const { data: servers, isLoading } = useListServers({ query: { refetchInterval: 30000 } });
   const createServer = useCreateServer();
   const deleteServer = useDeleteServer();
   const testConn = useTestServerConnection();
   const installNginx = useInstallNginx();
 
   const [showForm, setShowForm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
   const [form, setForm] = useState({
     name: "",
     host: "",
@@ -59,9 +63,13 @@ export default function Servers() {
   }
 
   function handleDelete(id: number) {
-    if (!confirm("Remove this server?")) return;
+    setDeleteTarget(id);
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
     deleteServer.mutate(
-      { id },
+      { id: deleteTarget },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });
@@ -70,6 +78,7 @@ export default function Servers() {
         onError: () => toast({ title: "Failed to remove server", variant: "destructive" }),
       }
     );
+    setDeleteTarget(null);
   }
 
   function handleTest(id: number) {
@@ -78,10 +87,10 @@ export default function Servers() {
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });
-          toast({
-            title: result.success ? "Connection successful" : "Connection failed",
-            description: result.message,
-            variant: result.success ? "default" : "destructive",
+          setLogModal({
+            title: result.success ? "Connection Successful" : "Connection Failed",
+            success: result.success,
+            output: result.output ?? result.message,
           });
         },
         onError: () => toast({ title: "Test failed", variant: "destructive" }),
@@ -96,10 +105,10 @@ export default function Servers() {
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListServersQueryKey() });
-          toast({
-            title: result.success ? "Nginx installed" : "Nginx install failed",
-            description: result.success ? undefined : result.error ?? undefined,
-            variant: result.success ? "default" : "destructive",
+          setLogModal({
+            title: result.success ? "Nginx Installed" : "Nginx Install Failed",
+            success: result.success,
+            output: result.output,
           });
         },
         onError: () => toast({ title: "Install failed", variant: "destructive" }),
@@ -168,7 +177,11 @@ export default function Servers() {
       ) : !servers || servers.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-12 text-center">
           <Server className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">No servers yet. Add your first VPS to get started.</p>
+          <p className="font-medium text-muted-foreground">No servers yet</p>
+          <p className="text-sm text-muted-foreground mt-1">Add your first VPS to get started.</p>
+          <button onClick={() => setShowForm(true)} className="mt-4 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90">
+            Add Server
+          </button>
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
@@ -183,6 +196,15 @@ export default function Servers() {
                   {server.nginxInstalled && (
                     <span className="text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">Nginx</span>
                   )}
+                  <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${
+                    server.status === "connected"
+                      ? "bg-emerald-900/20 text-emerald-400 border-emerald-800/50"
+                      : server.status === "disconnected"
+                      ? "bg-red-900/20 text-red-400 border-red-800/50"
+                      : "bg-muted/30 text-muted-foreground border-border"
+                  }`}>
+                    {server.status}
+                  </span>
                 </div>
                 <div className="text-sm text-muted-foreground">
                   {server.username}@{server.host}:{server.port}
@@ -221,6 +243,25 @@ export default function Servers() {
             </div>
           ))}
         </div>
+      )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Remove Server"
+        description="This will permanently remove this server from the manager. Sites on this server will also be removed."
+        confirmLabel="Remove Server"
+        onConfirm={confirmDelete}
+      />
+
+      {logModal && (
+        <LogModal
+          open={!!logModal}
+          onOpenChange={(open) => { if (!open) setLogModal(null); }}
+          title={logModal.title}
+          success={logModal.success}
+          output={logModal.output}
+        />
       )}
     </div>
   );

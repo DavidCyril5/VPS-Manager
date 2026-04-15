@@ -9,9 +9,11 @@ import {
   useInstallSsl,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink } from "lucide-react";
-import { Link } from "wouter";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { LogModal } from "@/components/log-modal";
+import { NginxConfigModal } from "@/components/nginx-config-modal";
 
 const statusColors: Record<string, string> = {
   active: "bg-emerald-900/40 text-emerald-400 border-emerald-800/50",
@@ -20,10 +22,37 @@ const statusColors: Record<string, string> = {
   stopped: "bg-muted/40 text-muted-foreground border-border",
 };
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button onClick={copy} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Copy">
+      {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
+}
+
+function SslExpiryBadge({ expiresAt }: { expiresAt: string | null | undefined }) {
+  if (!expiresAt) return null;
+  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (86400 * 1000));
+  const color = days < 14 ? "bg-red-900/40 text-red-400 border-red-800/50" : days < 30 ? "bg-amber-900/40 text-amber-400 border-amber-800/50" : "bg-emerald-900/40 text-emerald-400 border-emerald-800/50";
+  return (
+    <span className={`text-xs border px-2 py-0.5 rounded-full flex items-center gap-1 ${color}`}>
+      <Clock className="h-2.5 w-2.5" />
+      SSL {days}d
+    </span>
+  );
+}
+
 export default function Sites() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: sites, isLoading } = useListSites();
+  const { data: sites, isLoading } = useListSites({ query: { refetchInterval: 30000 } });
   const { data: servers } = useListServers();
   const createSite = useCreateSite();
   const deleteSite = useDeleteSite();
@@ -31,6 +60,11 @@ export default function Sites() {
   const installSsl = useInstallSsl();
 
   const [showForm, setShowForm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
+  const [nginxModal, setNginxModal] = useState<{ siteId: number; domain: string } | null>(null);
+  const [webhookVisible, setWebhookVisible] = useState<Set<number>>(new Set());
+
   const [form, setForm] = useState({
     serverId: 0,
     name: "",
@@ -80,9 +114,10 @@ export default function Sites() {
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
-          toast({
-            title: result.success ? "Deploy successful" : "Deploy failed",
-            variant: result.success ? "default" : "destructive",
+          setLogModal({
+            title: result.success ? "Deploy Successful" : "Deploy Failed",
+            success: result.success,
+            output: result.output,
           });
         },
         onError: () => toast({ title: "Deploy failed", variant: "destructive" }),
@@ -97,9 +132,10 @@ export default function Sites() {
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
-          toast({
-            title: result.success ? "SSL installed" : "SSL install failed",
-            variant: result.success ? "default" : "destructive",
+          setLogModal({
+            title: result.success ? "SSL Installed" : "SSL Install Failed",
+            success: result.success,
+            output: result.output,
           });
         },
         onError: () => toast({ title: "SSL install failed", variant: "destructive" }),
@@ -107,10 +143,10 @@ export default function Sites() {
     );
   }
 
-  function handleDelete(id: number) {
-    if (!confirm("Remove this site?")) return;
+  function confirmDelete() {
+    if (!deleteTarget) return;
     deleteSite.mutate(
-      { id },
+      { id: deleteTarget },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListSitesQueryKey() });
@@ -119,6 +155,22 @@ export default function Sites() {
         onError: () => toast({ title: "Failed to remove site", variant: "destructive" }),
       }
     );
+    setDeleteTarget(null);
+  }
+
+  function toggleWebhook(id: number) {
+    setWebhookVisible((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function getWebhookUrl(token: string | null | undefined) {
+    if (!token) return "";
+    const base = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, "");
+    return `${base}/api/webhook/${token}`;
   }
 
   return (
@@ -202,64 +254,126 @@ export default function Sites() {
       ) : !sites || sites.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-12 text-center">
           <Globe className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">No sites yet. Deploy your first website.</p>
+          <p className="font-medium text-muted-foreground">No sites yet</p>
+          <p className="text-sm text-muted-foreground mt-1">Deploy your first website from a Git repo.</p>
+          <button onClick={() => setShowForm(true)} className="mt-4 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90">
+            Deploy Site
+          </button>
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
           {sites.map((site) => (
-            <div key={site.id} className="flex items-center gap-4 px-6 py-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-1">
-                  <span className="font-semibold">{site.name}</span>
-                  <span className={`text-xs border px-2 py-0.5 rounded-full capitalize ${statusColors[site.status] ?? statusColors.stopped}`}>
-                    {site.status}
-                  </span>
-                  {site.sslInstalled && (
-                    <span className="text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">SSL</span>
-                  )}
-                  {site.autoSync && (
-                    <span className="text-xs bg-blue-900/40 text-blue-400 border border-blue-800/50 px-2 py-0.5 rounded-full">Auto-sync</span>
-                  )}
+            <div key={site.id} className="px-6 py-4 space-y-2">
+              <div className="flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 mb-1 flex-wrap">
+                    <span className="font-semibold">{site.name}</span>
+                    <span className={`text-xs border px-2 py-0.5 rounded-full capitalize ${statusColors[site.status] ?? statusColors.stopped}`}>
+                      {site.status}
+                    </span>
+                    {site.sslInstalled && (
+                      <span className="text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">SSL</span>
+                    )}
+                    {site.sslExpiresAt && <SslExpiryBadge expiresAt={site.sslExpiresAt} />}
+                    {site.autoSync && (
+                      <span className="text-xs bg-blue-900/40 text-blue-400 border border-blue-800/50 px-2 py-0.5 rounded-full">Auto-sync</span>
+                    )}
+                    <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{site.siteType}</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-2">
+                    <ExternalLink className="h-3 w-3" />
+                    <a href={`http://${site.domain}`} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">
+                      {site.domain}
+                    </a>
+                    {site.lastDeployedAt && <span className="text-xs">· Last deployed {new Date(site.lastDeployedAt).toLocaleDateString()}</span>}
+                  </div>
                 </div>
-                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                  <ExternalLink className="h-3 w-3" />
-                  {site.domain}
-                  <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{site.siteType}</span>
-                  {site.lastDeployedAt && <span>Last deployed {new Date(site.lastDeployedAt).toLocaleDateString()}</span>}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleDeploy(site.id)}
-                  disabled={deploySite.isPending}
-                  className="flex items-center gap-1.5 text-xs bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  <Rocket className="h-3 w-3" />
-                  Deploy
-                </button>
-                {!site.sslInstalled && site.status === "active" && (
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <button
-                    onClick={() => handleSsl(site.id)}
-                    disabled={installSsl.isPending}
-                    className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                    onClick={() => handleDeploy(site.id)}
+                    disabled={deploySite.isPending}
+                    className="flex items-center gap-1.5 text-xs bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
                   >
-                    <ShieldCheck className="h-3 w-3" />
-                    Install SSL
+                    <Rocket className="h-3 w-3" />
+                    Deploy
                   </button>
-                )}
-                <Link href={`/sites/${site.id}`} className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-foreground px-3 py-1.5 rounded-lg transition-colors">
-                  Details
-                </Link>
-                <button
-                  onClick={() => handleDelete(site.id)}
-                  className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                  {!site.sslInstalled && site.status === "active" && (
+                    <button
+                      onClick={() => handleSsl(site.id)}
+                      disabled={installSsl.isPending}
+                      className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <ShieldCheck className="h-3 w-3" />
+                      SSL
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setNginxModal({ siteId: site.id, domain: site.domain })}
+                    className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-foreground px-3 py-1.5 rounded-lg transition-colors"
+                    title="View/Edit Nginx Config"
+                  >
+                    <FileCode className="h-3 w-3" />
+                    Nginx
+                  </button>
+                  {site.webhookToken && (
+                    <button
+                      onClick={() => toggleWebhook(site.id)}
+                      className="flex items-center gap-1.5 text-xs bg-violet-900/30 hover:bg-violet-900/50 text-violet-400 border border-violet-800/50 px-3 py-1.5 rounded-lg transition-colors"
+                      title="Webhook URL"
+                    >
+                      Webhook
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setDeleteTarget(site.id)}
+                    className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
+
+              {webhookVisible.has(site.id) && site.webhookToken && (
+                <div className="bg-muted/30 rounded-lg px-4 py-3 mt-2 border border-border/50">
+                  <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">Auto-Deploy Webhook</p>
+                  <p className="text-xs text-muted-foreground mb-2">Send a POST request to this URL from GitHub/GitLab to trigger a deploy automatically.</p>
+                  <div className="flex items-center gap-2 bg-background rounded-lg px-3 py-2 border border-border font-mono text-xs text-muted-foreground">
+                    <span className="flex-1 truncate">{getWebhookUrl(site.webhookToken)}</span>
+                    <CopyButton text={getWebhookUrl(site.webhookToken)} />
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
+      )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Remove Site"
+        description="This will permanently remove this site from the manager. Files on the VPS will not be deleted."
+        confirmLabel="Remove Site"
+        onConfirm={confirmDelete}
+      />
+
+      {logModal && (
+        <LogModal
+          open={!!logModal}
+          onOpenChange={(open) => { if (!open) setLogModal(null); }}
+          title={logModal.title}
+          success={logModal.success}
+          output={logModal.output}
+        />
+      )}
+
+      {nginxModal && (
+        <NginxConfigModal
+          open={!!nginxModal}
+          onOpenChange={(open) => { if (!open) setNginxModal(null); }}
+          siteId={nginxModal.siteId}
+          domain={nginxModal.domain}
+        />
       )}
     </div>
   );

@@ -23,7 +23,11 @@ export interface Site {
   siteType: SiteSiteType;
   status: SiteStatus;
   sslInstalled: boolean;
+  /** @nullable */
+  sslExpiresAt?: string | null;
   autoSync: boolean;
+  /** @nullable */
+  webhookToken?: string | null;
   /** @nullable */
   lastDeployedAt?: string | null;
   createdAt: string;
