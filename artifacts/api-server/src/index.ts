@@ -54,6 +54,111 @@ async function autoCleanLogsIfNeeded(): Promise<void> {
 
 const LOG_CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
+// --- Memory watchdog + CPU alert + stats history background job ---
+// Runs every 10 minutes. For each connected server:
+//   1. Collects CPU/memory and appends to a rolling 24-point history
+//   2. Restarts any PM2 app exceeding the server memoryLimitMb threshold
+//   3. Sends a webhook alert if CPU stays above cpuAlertThreshold 2 checks in a row
+
+const cpuHighStreak = new Map<number, number>(); // serverId -> consecutive high-cpu count
+
+async function serverHealthJob(): Promise<void> {
+  try {
+    const servers = await Server.find({ status: "connected" });
+    for (const server of servers) {
+      const s = server.toObject() as Record<string, unknown>;
+      const sshOpts = {
+        host: s.host as string,
+        port: s.port as number,
+        username: s.username as string,
+        password: decryptSecret(s.password as string),
+        privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null,
+      };
+      const serverId = s.id as number;
+      const memLimitMb = (s.memoryLimitMb as number | null) ?? 512;
+      const cpuThreshold = (s.cpuAlertThreshold as number | null) ?? 85;
+
+      // Collect stats + PM2 process list in one SSH call
+      const statsCmd = [
+        `echo "CPU:$(top -bn1 | grep 'Cpu(s)' | awk '{print $2+$4}')"`,
+        `echo "MEM:$(free -m | awk 'NR==2{print $3\":\"$2}')"`,
+        `pm2 jlist 2>/dev/null || echo "[]"`,
+      ].join(" && ");
+
+      const result = await runSshCommand(sshOpts, statsCmd, 20000).catch(() => null);
+      if (!result?.success) continue;
+
+      const lines = result.output.split("\n");
+      let cpu = 0, memUsed = 0, memTotal = 0, pm2Json = "[]";
+      for (const line of lines) {
+        if (line.startsWith("CPU:")) cpu = parseFloat(line.replace("CPU:", "")) || 0;
+        else if (line.startsWith("MEM:")) {
+          const parts = line.replace("MEM:", "").split(":");
+          memUsed = parseInt(parts[0] ?? "0", 10);
+          memTotal = parseInt(parts[1] ?? "0", 10);
+        } else if (line.trim().startsWith("[")) pm2Json = line.trim();
+      }
+
+      // 1. Append to stats history (rolling 24 points)
+      const history = ((s.statsHistory as unknown[]) ?? []).slice(-23);
+      history.push({ ts: new Date(), cpu, memoryUsed: memUsed, memoryTotal: memTotal });
+      await Server.findOneAndUpdate({ id: serverId }, { statsHistory: history, updatedAt: new Date() });
+
+      // 2. PM2 memory watchdog
+      if (memLimitMb > 0) {
+        try {
+          const pm2List = JSON.parse(pm2Json) as Array<Record<string, unknown>>;
+          for (const proc of pm2List) {
+            const memBytes = ((proc.monit as Record<string, number>)?.memory) ?? 0;
+            const memMb = Math.round(memBytes / 1024 / 1024);
+            const procName = proc.name as string;
+            if (memMb > memLimitMb) {
+              await runSshCommand(sshOpts, `pm2 restart "${procName}" 2>&1`, 15000).catch(() => null);
+              logger.warn({ serverId, procName, memMb, memLimitMb }, "Memory watchdog: restarted oversize PM2 process");
+            }
+          }
+        } catch { /* pm2 jlist unavailable or parse failed - skip this cycle */ }
+      }
+
+      // 3. CPU spike alert (webhook after 2 consecutive high readings)
+      if (cpuThreshold > 0) {
+        const streak = (cpuHighStreak.get(serverId) ?? 0);
+        if (cpu >= cpuThreshold) {
+          const newStreak = streak + 1;
+          cpuHighStreak.set(serverId, newStreak);
+          if (newStreak >= 2) {
+            try {
+              const settings = await (await import("./lib/db")).getSettings();
+              const webhookUrl = settings.alertWebhookUrl as string | null;
+              if (webhookUrl) {
+                const payload = JSON.stringify({
+                  event: "high_cpu", server: s.name, host: s.host,
+                  cpu: `${cpu.toFixed(1)}%`, threshold: `${cpuThreshold}%`,
+                  consecutiveChecks: newStreak, timestamp: new Date().toISOString(),
+                });
+                const parsed = new URL(webhookUrl);
+                const mod = parsed.protocol === "https:" ? (await import("https")).default : (await import("http")).default;
+                await new Promise<void>((resolve) => {
+                  const req = mod.request(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } }, () => resolve());
+                  req.on("error", () => resolve());
+                  req.write(payload); req.end();
+                });
+                logger.warn({ serverId, cpu, cpuThreshold, streak: newStreak }, "CPU alert webhook fired");
+              }
+            } catch { /* webhook failure is non-fatal */ }
+          }
+        } else {
+          cpuHighStreak.set(serverId, 0);
+        }
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, "Server health job failed");
+  }
+}
+
+const HEALTH_CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
@@ -184,6 +289,9 @@ connectDB()
     // Start auto log-clear background job
     setInterval(() => { void autoCleanLogsIfNeeded(); }, LOG_CHECK_INTERVAL_MS);
     logger.info({ intervalMs: LOG_CHECK_INTERVAL_MS }, "Auto log-clear job scheduled");
+    // Start server health job (memory watchdog + CPU alerts + stats history)
+    setInterval(() => { void serverHealthJob(); }, HEALTH_CHECK_INTERVAL_MS);
+    logger.info({ intervalMs: HEALTH_CHECK_INTERVAL_MS }, "Server health job scheduled");
     httpServer.listen(port, (err?: Error) => {
       if (err) {
         logger.error({ err }, "Error listening on port");
