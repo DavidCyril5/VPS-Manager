@@ -6,11 +6,9 @@ import cloudflareRouter from "./cloudflare";
 import activityRouter from "./activity";
 import gitTokensRouter from "./gitTokens";
 import settingsRouter from "./settings";
-import authRouter from "./auth";
 
 const router: IRouter = Router();
 
-router.use(authRouter);
 router.use(healthRouter);
 router.use(serversRouter);
 router.use(sitesRouter);

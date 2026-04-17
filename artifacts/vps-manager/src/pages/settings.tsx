@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
-import { Settings, Bell, Lock, Save } from "lucide-react";
+import { Settings, Bell, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface SettingsData {
   alertWebhookUrl: string | null;
-  hasAdminPassword: boolean;
 }
 
 export default function SettingsPage() {
@@ -12,12 +11,10 @@ export default function SettingsPage() {
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   const [data, setData] = useState<SettingsData | null>(null);
   const [webhookUrl, setWebhookUrl] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch(`${base}/api/settings`, { headers: { Authorization: `Bearer ${localStorage.getItem("vpm-token") ?? ""}` } })
+    fetch(`${base}/api/settings`)
       .then((r) => r.json())
       .then((d: SettingsData) => {
         setData(d);
@@ -31,7 +28,7 @@ export default function SettingsPage() {
     try {
       const r = await fetch(`${base}/api/settings`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("vpm-token") ?? ""}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ alertWebhookUrl: webhookUrl || null }),
       });
       const d = await r.json() as SettingsData;
@@ -39,27 +36,6 @@ export default function SettingsPage() {
       toast({ title: "Webhook URL saved" });
     } catch {
       toast({ title: "Failed to save", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function savePassword() {
-    if (!newPassword) return;
-    if (newPassword !== confirmPassword) { toast({ title: "Passwords don't match", variant: "destructive" }); return; }
-    if (newPassword.length < 8) { toast({ title: "Password must be at least 8 characters", variant: "destructive" }); return; }
-    setSaving(true);
-    try {
-      await fetch(`${base}/api/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("vpm-token") ?? ""}` },
-        body: JSON.stringify({ adminPassword: newPassword }),
-      });
-      setNewPassword("");
-      setConfirmPassword("");
-      toast({ title: "Password updated" });
-    } catch {
-      toast({ title: "Failed to update password", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -104,49 +80,6 @@ export default function SettingsPage() {
             Clear webhook URL
           </button>
         )}
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Lock className="h-4 w-4 text-muted-foreground" />
-          <h2 className="font-semibold">Admin Password</h2>
-          {data?.hasAdminPassword && (
-            <span className="text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">Set</span>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Set or change the admin password. The <code className="text-xs bg-muted px-1 py-0.5 rounded">ADMIN_PASSWORD</code> environment variable must also be set to enable login protection.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1">New Password</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Min. 8 characters"
-              className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1">Confirm Password</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Repeat password"
-              className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-        </div>
-        <button
-          onClick={savePassword}
-          disabled={saving || !newPassword}
-          className="flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
-          <Save className="h-3.5 w-3.5" />
-          Update Password
-        </button>
       </div>
     </div>
   );
