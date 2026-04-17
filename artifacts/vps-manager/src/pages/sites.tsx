@@ -11,7 +11,7 @@ import {
   useListCloudflareConfigs,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText, RotateCcw, RefreshCw, Play, Square, Timer, AlertCircle, Trash } from "lucide-react";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText, RotateCcw, RefreshCw, Play, Square, Timer, AlertCircle, Trash, MoreVertical } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
@@ -115,6 +115,7 @@ export default function Sites() {
   const [rollbackModal, setRollbackModal] = useState<{ siteId: number; name: string; commits: { sha: string; subject: string; date: string }[] } | null>(null);
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [sslRenewalLoading, setSslRenewalLoading] = useState<Set<number>>(new Set());
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<number | null>(null);
 
   const [repoBrowser, setRepoBrowser] = useState<{ open: boolean; loading: boolean; repos: GHRepo[]; search: string; error: string | null }>({ open: false, loading: false, repos: [], search: "", error: null });
 
@@ -742,134 +743,139 @@ export default function Sites() {
                     {site.lastDeployedAt && <span className="text-xs shrink-0">· Last deployed {new Date(site.lastDeployedAt).toLocaleDateString()}</span>}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => handleDeploy(site.id)}
-                    disabled={deploySite.isPending}
-                    className="flex items-center gap-1.5 text-xs bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    <Rocket className="h-3 w-3" />
-                    Deploy
+                {/* ── Desktop actions (all visible) ── */}
+                <div className="hidden sm:flex items-center gap-2 flex-wrap">
+                  <button onClick={() => handleDeploy(site.id)} disabled={deploySite.isPending} className="flex items-center gap-1.5 text-xs bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                    <Rocket className="h-3 w-3" />Deploy
                   </button>
                   {site.status === "active" && (
-                    <button
-                      onClick={() => handleSsl(site.id)}
-                      disabled={installSsl.isPending}
-                      className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                      title={site.sslInstalled ? "Reinstall / renew SSL certificate" : "Install SSL certificate"}
-                    >
-                      <ShieldCheck className="h-3 w-3" />
-                      {site.sslInstalled ? "Renew SSL" : "SSL"}
+                    <button onClick={() => handleSsl(site.id)} disabled={installSsl.isPending} className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50" title={site.sslInstalled ? "Reinstall / renew SSL certificate" : "Install SSL certificate"}>
+                      <ShieldCheck className="h-3 w-3" />{site.sslInstalled ? "Renew SSL" : "SSL"}
                     </button>
                   )}
-                  <button
-                    onClick={() => setNginxModal({ siteId: site.id, domain: site.domain })}
-                    className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-foreground px-3 py-1.5 rounded-lg transition-colors"
-                    title="View/Edit Nginx Config"
-                  >
-                    <FileCode className="h-3 w-3" />
-                    Nginx
+                  <button onClick={() => setNginxModal({ siteId: site.id, domain: site.domain })} className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-foreground px-3 py-1.5 rounded-lg transition-colors">
+                    <FileCode className="h-3 w-3" />Nginx
                   </button>
                   {site.status === "active" && (
-                    <button
-                      onClick={() => setSiteLogsTarget({ id: site.id, domain: site.domain })}
-                      className="flex items-center gap-1.5 text-xs bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 border border-purple-800/50 px-3 py-1.5 rounded-lg transition-colors"
-                      title="View live nginx logs for this site"
-                    >
-                      <ScrollText className="h-3 w-3" />
-                      Logs
+                    <button onClick={() => setSiteLogsTarget({ id: site.id, domain: site.domain })} className="flex items-center gap-1.5 text-xs bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 border border-purple-800/50 px-3 py-1.5 rounded-lg transition-colors">
+                      <ScrollText className="h-3 w-3" />Logs
                     </button>
                   )}
                   {isNodeOrPy && site.status === "active" && (
                     <>
-                      <button
-                        onClick={() => handlePm2Action(site.id, "restart", site.name)}
-                        disabled={pm2Loading}
-                        className="flex items-center gap-1.5 text-xs bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                        title="PM2 Restart"
-                      >
-                        <RefreshCw className="h-3 w-3" />
-                        Restart
+                      <button onClick={() => handlePm2Action(site.id, "restart", site.name)} disabled={pm2Loading} className="flex items-center gap-1.5 text-xs bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                        <RefreshCw className="h-3 w-3" />Restart
                       </button>
-                      <button
-                        onClick={() => handlePm2Action(site.id, "stop", site.name)}
-                        disabled={pm2Loading}
-                        className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                        title="PM2 Stop"
-                      >
-                        <Square className="h-3 w-3" />
-                        Stop
+                      <button onClick={() => handlePm2Action(site.id, "stop", site.name)} disabled={pm2Loading} className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                        <Square className="h-3 w-3" />Stop
                       </button>
-                      <button
-                        onClick={() => handlePm2Action(site.id, "logs", site.name)}
-                        disabled={pm2Loading}
-                        className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                        title="PM2 Logs"
-                      >
-                        <ScrollText className="h-3 w-3" />
-                        PM2 Logs
+                      <button onClick={() => handlePm2Action(site.id, "logs", site.name)} disabled={pm2Loading} className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                        <ScrollText className="h-3 w-3" />PM2 Logs
                       </button>
-                      <button
-                        onClick={() => handleCleanPm2Logs(site.id, true)}
-                        className="flex items-center gap-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 px-3 py-1.5 rounded-lg transition-colors"
-                        title="Clean PM2 Logs"
-                      >
-                        <Trash className="h-3 w-3" />
-                        Clean Logs
+                      <button onClick={() => handleCleanPm2Logs(site.id, true)} className="flex items-center gap-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 px-3 py-1.5 rounded-lg transition-colors">
+                        <Trash className="h-3 w-3" />Clean Logs
                       </button>
                     </>
                   )}
                   {site.repoUrl && (
-                    <button
-                      onClick={() => handleRollbackOpen(site.id, site.name)}
-                      className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors"
-                      title="Rollback to a previous commit"
-                    >
-                      <RotateCcw className="h-3 w-3" />
-                      Rollback
+                    <button onClick={() => handleRollbackOpen(site.id, site.name)} className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors">
+                      <RotateCcw className="h-3 w-3" />Rollback
                     </button>
                   )}
-                  <button
-                    onClick={() => checkUptime(site.id)}
-                    className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors"
-                    title="Check if site is reachable"
-                  >
-                    <Timer className="h-3 w-3" />
-                    Ping
+                  <button onClick={() => checkUptime(site.id)} className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-muted-foreground px-3 py-1.5 rounded-lg transition-colors">
+                    <Timer className="h-3 w-3" />Ping
                   </button>
                   {site.sslInstalled && (
-                    <button
-                      onClick={() => handleSslRenewal(site.id)}
-                      disabled={sslRenewalLoading.has(site.id)}
-                      className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                      title="Setup certbot auto-renewal cron"
-                    >
-                      <Timer className="h-3 w-3" />
-                      Auto-Renew
+                    <button onClick={() => handleSslRenewal(site.id)} disabled={sslRenewalLoading.has(site.id)} className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                      <Timer className="h-3 w-3" />Auto-Renew
                     </button>
                   )}
                   {site.webhookToken && (
-                    <button
-                      onClick={() => toggleWebhook(site.id)}
-                      className="flex items-center gap-1.5 text-xs bg-violet-900/30 hover:bg-violet-900/50 text-violet-400 border border-violet-800/50 px-3 py-1.5 rounded-lg transition-colors"
-                      title="Webhook URL"
-                    >
+                    <button onClick={() => toggleWebhook(site.id)} className="flex items-center gap-1.5 text-xs bg-violet-900/30 hover:bg-violet-900/50 text-violet-400 border border-violet-800/50 px-3 py-1.5 rounded-lg transition-colors">
                       Webhook
                     </button>
                   )}
-                  <button
-                    onClick={() => editTarget === site.id ? setEditTarget(null) : openEdit(site)}
-                    className="p-1.5 text-muted-foreground hover:text-amber-400 transition-colors"
-                    title="Edit site settings"
-                  >
+                  <button onClick={() => editTarget === site.id ? setEditTarget(null) : openEdit(site)} className="p-1.5 text-muted-foreground hover:text-amber-400 transition-colors">
                     {editTarget === site.id ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                   </button>
-                  <button
-                    onClick={() => setDeleteTarget(site.id)}
-                    className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors"
-                  >
+                  <button onClick={() => setDeleteTarget(site.id)} className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors">
                     <Trash2 className="h-4 w-4" />
                   </button>
+                </div>
+
+                {/* ── Mobile actions (Deploy + ⋮ menu) ── */}
+                <div className="sm:hidden flex items-center gap-2">
+                  <button onClick={() => handleDeploy(site.id)} disabled={deploySite.isPending} className="flex items-center gap-1.5 text-xs bg-blue-900/30 text-blue-400 border border-blue-800/50 px-3 py-1.5 rounded-lg disabled:opacity-50">
+                    <Rocket className="h-3 w-3" />Deploy
+                  </button>
+                  <button onClick={() => editTarget === site.id ? setEditTarget(null) : openEdit(site)} className="p-1.5 text-muted-foreground hover:text-amber-400 transition-colors">
+                    {editTarget === site.id ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                  </button>
+                  <button onClick={() => setDeleteTarget(site.id)} className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setMobileMenuOpen(mobileMenuOpen === site.id ? null : site.id)}
+                      className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                    {mobileMenuOpen === site.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setMobileMenuOpen(null)} />
+                        <div className="absolute right-0 bottom-full mb-1 z-20 w-44 bg-card border border-border rounded-xl shadow-xl overflow-hidden">
+                          {site.status === "active" && (
+                            <button onClick={() => { handleSsl(site.id); setMobileMenuOpen(null); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-emerald-400 hover:bg-muted transition-colors text-left">
+                              <ShieldCheck className="h-4 w-4" />{site.sslInstalled ? "Renew SSL" : "SSL"}
+                            </button>
+                          )}
+                          <button onClick={() => { setNginxModal({ siteId: site.id, domain: site.domain }); setMobileMenuOpen(null); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left">
+                            <FileCode className="h-4 w-4" />Nginx Config
+                          </button>
+                          {site.status === "active" && (
+                            <button onClick={() => { setSiteLogsTarget({ id: site.id, domain: site.domain }); setMobileMenuOpen(null); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-purple-400 hover:bg-muted transition-colors text-left">
+                              <ScrollText className="h-4 w-4" />Nginx Logs
+                            </button>
+                          )}
+                          {isNodeOrPy && site.status === "active" && (
+                            <>
+                              <button onClick={() => { handlePm2Action(site.id, "restart", site.name); setMobileMenuOpen(null); }} disabled={pm2Loading} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-amber-400 hover:bg-muted transition-colors text-left disabled:opacity-50">
+                                <RefreshCw className="h-4 w-4" />Restart PM2
+                              </button>
+                              <button onClick={() => { handlePm2Action(site.id, "stop", site.name); setMobileMenuOpen(null); }} disabled={pm2Loading} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                                <Square className="h-4 w-4" />Stop PM2
+                              </button>
+                              <button onClick={() => { handlePm2Action(site.id, "logs", site.name); setMobileMenuOpen(null); }} disabled={pm2Loading} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                                <ScrollText className="h-4 w-4" />PM2 Logs
+                              </button>
+                              <button onClick={() => { handleCleanPm2Logs(site.id, true); setMobileMenuOpen(null); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 hover:bg-muted transition-colors text-left">
+                                <Trash className="h-4 w-4" />Clean Logs
+                              </button>
+                            </>
+                          )}
+                          {site.repoUrl && (
+                            <button onClick={() => { handleRollbackOpen(site.id, site.name); setMobileMenuOpen(null); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left">
+                              <RotateCcw className="h-4 w-4" />Rollback
+                            </button>
+                          )}
+                          <button onClick={() => { checkUptime(site.id); setMobileMenuOpen(null); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left">
+                            <Timer className="h-4 w-4" />Ping
+                          </button>
+                          {site.sslInstalled && (
+                            <button onClick={() => { handleSslRenewal(site.id); setMobileMenuOpen(null); }} disabled={sslRenewalLoading.has(site.id)} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-emerald-400 hover:bg-muted transition-colors text-left disabled:opacity-50">
+                              <Timer className="h-4 w-4" />Auto-Renew
+                            </button>
+                          )}
+                          {site.webhookToken && (
+                            <button onClick={() => { toggleWebhook(site.id); setMobileMenuOpen(null); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-violet-400 hover:bg-muted transition-colors text-left">
+                              <Globe className="h-4 w-4" />Webhook
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 

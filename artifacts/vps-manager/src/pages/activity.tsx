@@ -92,28 +92,25 @@ function LogRow({ entry }: { entry: LogEntry }) {
       >
         <div className="mt-0.5">{STATUS_ICON[entry.status] ?? STATUS_ICON.success}</div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className={`text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded ${TYPE_COLORS[entry.type] ?? "bg-muted text-muted-foreground border-border"}`}>
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <span className={`text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[entry.type] ?? "bg-muted text-muted-foreground border-border"}`}>
               {TYPE_LABELS[entry.type] ?? entry.type}
             </span>
             {entry.siteName && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Globe className="h-3 w-3" />
-                {entry.siteName}
-                {entry.siteDomain && <span className="opacity-60">({entry.siteDomain})</span>}
+              <span className="flex items-center gap-1 text-xs text-muted-foreground min-w-0 truncate">
+                <Globe className="h-3 w-3 shrink-0" />
+                <span className="truncate">{entry.siteName}</span>
               </span>
             )}
             {entry.serverName && !entry.siteName && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Server className="h-3 w-3" />
-                {entry.serverName}
+              <span className="flex items-center gap-1 text-xs text-muted-foreground truncate">
+                <Server className="h-3 w-3 shrink-0" />
+                <span className="truncate">{entry.serverName}</span>
               </span>
             )}
-            <span className="text-xs text-muted-foreground ml-auto">
-              {new Date(entry.createdAt).toLocaleString()}
-            </span>
           </div>
-          <p className="text-sm">{entry.message}</p>
+          <p className="text-sm leading-snug">{entry.message}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{new Date(entry.createdAt).toLocaleString()}</p>
         </div>
         {entry.details && (
           <div className="text-muted-foreground mt-0.5 flex-shrink-0">
@@ -169,65 +166,72 @@ export default function ActivityPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Deployment Logs</h1>
-          <p className="text-muted-foreground mt-1">All activity and output from your servers.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Deployment Logs</h1>
+          <p className="text-muted-foreground mt-1 text-sm">All activity and output from your servers.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={reload}
-            className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 px-3 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-colors"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </button>
           <button
             onClick={() => setClearConfirm(true)}
-            className="flex items-center gap-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 px-3 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-colors"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Clear logs
+            <span className="hidden sm:inline">Clear logs</span>
           </button>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex rounded-lg border border-border overflow-hidden text-xs">
-          {TYPE_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setTypeFilter(tab.value)}
-              className={`px-3 py-1.5 transition-colors border-r border-border last:border-0 ${typeFilter === tab.value ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <div className="space-y-2">
+        {/* Horizontally scrollable filter tabs on mobile */}
+        <div className="overflow-x-auto pb-1">
+          <div className="flex gap-2 min-w-max">
+            <div className="flex rounded-lg border border-border overflow-hidden text-xs">
+              {TYPE_TABS.map((tab) => (
+                <button
+                  key={tab.value}
+                  onClick={() => setTypeFilter(tab.value)}
+                  className={`px-3 py-1.5 transition-colors border-r border-border last:border-0 ${typeFilter === tab.value ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-lg border border-border overflow-hidden text-xs">
+              {[{ v: "all", l: "All" }, { v: "success", l: "Success" }, { v: "failure", l: "Failed" }, { v: "running", l: "Running" }].map((s) => (
+                <button
+                  key={s.v}
+                  onClick={() => setStatusFilter(s.v)}
+                  className={`px-3 py-1.5 transition-colors border-r border-border last:border-0 ${statusFilter === s.v ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
+                >
+                  {s.l}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="flex rounded-lg border border-border overflow-hidden text-xs">
-          {[{ v: "all", l: "All statuses" }, { v: "success", l: "Success" }, { v: "failure", l: "Failed" }, { v: "running", l: "Running" }].map((s) => (
-            <button
-              key={s.v}
-              onClick={() => setStatusFilter(s.v)}
-              className={`px-3 py-1.5 transition-colors border-r border-border last:border-0 ${statusFilter === s.v ? "bg-primary text-primary-foreground" : "hover:bg-muted/50"}`}
-            >
-              {s.l}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search logs..."
+            className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          {hasRunning && (
+            <span className="flex items-center gap-1.5 text-xs text-amber-400 animate-pulse shrink-0">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span className="hidden sm:inline">Live</span>
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground shrink-0">{filtered.length}</span>
         </div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search logs..."
-          className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        {hasRunning && (
-          <span className="flex items-center gap-1.5 text-xs text-amber-400 animate-pulse">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Live — auto-refreshing
-          </span>
-        )}
-        <span className="text-xs text-muted-foreground ml-auto">{filtered.length} entries</span>
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">

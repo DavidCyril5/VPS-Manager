@@ -192,6 +192,14 @@ export default function TerminalPage() {
         </div>
       </div>
 
+      {/* Mobile warning */}
+      <div className="sm:hidden rounded-xl border border-amber-800/50 bg-amber-900/20 px-4 py-3 flex items-start gap-3">
+        <TerminalIcon className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-300 leading-relaxed">
+          The terminal works best on a desktop or tablet with a physical keyboard. On mobile, the on-screen keyboard may not respond to all key inputs correctly.
+        </p>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <Server className="h-4 w-4 text-muted-foreground shrink-0" />
         <select

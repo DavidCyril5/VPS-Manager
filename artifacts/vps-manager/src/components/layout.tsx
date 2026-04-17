@@ -1,22 +1,22 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Server, Globe, Activity, Cloud, LayoutDashboard, TerminalSquare, Menu, X, Settings } from "lucide-react";
+import { Server, Globe, Activity, Cloud, LayoutDashboard, TerminalSquare, Settings, X, Menu } from "lucide-react";
+
+const nav = [
+  { name: "Dashboard", short: "Home", href: "/", icon: LayoutDashboard },
+  { name: "Servers", short: "Servers", href: "/servers", icon: Server },
+  { name: "Sites", short: "Sites", href: "/sites", icon: Globe },
+  { name: "Cloudflare", short: "DNS", href: "/cloudflare", icon: Cloud },
+  { name: "Terminal", short: "Shell", href: "/terminal", icon: TerminalSquare },
+  { name: "Activity", short: "Activity", href: "/activity", icon: Activity },
+  { name: "Settings", short: "More", href: "/settings", icon: Settings },
+];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const [open, setOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const nav = [
-    { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Servers", href: "/servers", icon: Server },
-    { name: "Sites", href: "/sites", icon: Globe },
-    { name: "Cloudflare", href: "/cloudflare", icon: Cloud },
-    { name: "Terminal", href: "/terminal", icon: TerminalSquare },
-    { name: "Activity", href: "/activity", icon: Activity },
-    { name: "Settings", href: "/settings", icon: Settings },
-  ];
-
-  const NavLinks = () => (
+  const NavLinks = ({ onClick }: { onClick?: () => void }) => (
     <>
       {nav.map((item) => {
         const active = location === item.href || (item.href !== "/" && location.startsWith(item.href));
@@ -24,7 +24,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <Link
             key={item.href}
             href={item.href}
-            onClick={() => setOpen(false)}
+            onClick={onClick}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               active
                 ? "bg-accent text-accent-foreground"
@@ -51,28 +51,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
       </div>
 
-      {/* ── Mobile overlay backdrop ── */}
-      {open && (
+      {/* ── Mobile slide-in drawer (for overflow / edge use) ── */}
+      {drawerOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/60 md:hidden"
-          onClick={() => setOpen(false)}
+          onClick={() => setDrawerOpen(false)}
         />
       )}
-
-      {/* ── Mobile slide-in drawer ── */}
       <div
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-card border-r flex flex-col transform transition-transform duration-200 md:hidden ${
-          open ? "translate-x-0" : "-translate-x-full"
+          drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="h-14 flex items-center justify-between px-4 border-b">
           <span className="font-bold text-lg">VPS Manager</span>
-          <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
+          <button onClick={() => setDrawerOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
             <X className="h-5 w-5" />
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          <NavLinks />
+          <NavLinks onClick={() => setDrawerOpen(false)} />
         </nav>
       </div>
 
@@ -81,7 +79,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* Mobile top bar */}
         <div className="md:hidden h-14 flex items-center gap-3 px-4 border-b bg-card shrink-0">
           <button
-            onClick={() => setOpen(true)}
+            onClick={() => setDrawerOpen(true)}
             className="text-muted-foreground hover:text-foreground p-1"
             aria-label="Open menu"
           >
@@ -90,12 +88,31 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <span className="font-bold text-base">VPS Manager</span>
         </div>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>
         </main>
       </div>
+
+      {/* ── Mobile bottom navigation ── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t bg-card flex items-stretch">
+        {nav.map((item) => {
+          const active = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors min-w-0 ${
+                active ? "text-primary" : "text-muted-foreground"
+              }`}
+            >
+              <item.icon className={`h-5 w-5 shrink-0 ${active ? "text-primary" : ""}`} />
+              <span className="text-[9px] leading-tight font-medium truncate w-full text-center px-0.5">{item.short}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

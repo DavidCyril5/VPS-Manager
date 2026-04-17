@@ -34,14 +34,14 @@ export default function Dashboard() {
         <p className="text-muted-foreground mt-1">Overview of your infrastructure.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <div key={stat.label} className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm font-medium text-muted-foreground">{stat.label}</span>
-              <stat.icon className={`h-5 w-5 ${stat.color}`} />
+          <div key={stat.label} className="rounded-xl border border-border bg-card p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-2 sm:mb-4">
+              <span className="text-xs sm:text-sm font-medium text-muted-foreground leading-tight">{stat.label}</span>
+              <stat.icon className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${stat.color}`} />
             </div>
-            <div className="text-3xl font-bold">{isLoading ? "—" : stat.value}</div>
+            <div className="text-2xl sm:text-3xl font-bold">{isLoading ? "—" : stat.value}</div>
           </div>
         ))}
       </div>
