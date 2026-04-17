@@ -97,7 +97,7 @@ export default function Sites() {
   const [editForm, setEditForm] = useState({
     name: "", domain: "", repoUrl: "", repoToken: "",
     deployPath: "", webRoot: "", buildCommand: "", startCommand: "", port: 3000, siteType: "static", autoSync: false,
-    cloudflareConfigId: 0,
+    cloudflareConfigId: 0, logSizeLimitMb: 50,
   });
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [logModal, setLogModal] = useState<{ title: string; success: boolean; output: string } | null>(null);
@@ -194,6 +194,7 @@ export default function Sites() {
       siteType: site.siteType ?? "static",
       autoSync: (s.autoSync as boolean) ?? false,
       cloudflareConfigId: (s.cloudflareConfigId as number) || 0,
+      logSizeLimitMb: (s.logSizeLimitMb as number) || 50,
     });
   }
 
@@ -947,6 +948,21 @@ export default function Sites() {
                     <div className="flex items-center gap-2 pt-4">
                       <input name="autoSync" type="checkbox" checked={editForm.autoSync} onChange={handleEditChange} id={`autoSync-${site.id}`} className="rounded" />
                       <label htmlFor={`autoSync-${site.id}`} className="text-sm">Enable auto-sync</label>
+                    {(editForm.siteType === "nodejs" || editForm.siteType === "python") && (
+                      <div className="mt-3">
+                        <label className="block text-xs text-muted-foreground mb-1">Auto-clear logs when size exceeds (MB)</label>
+                        <input
+                          name="logSizeLimitMb"
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={editForm.logSizeLimitMb}
+                          onChange={handleEditChange}
+                          className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">Logs are truncated in-place every 10 min if over this limit — site stays up</p>
+                      </div>
+                    )}
                     </div>
                   </div>
                   <div className="flex gap-2 pt-1">
