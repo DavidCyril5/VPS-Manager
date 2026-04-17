@@ -72,15 +72,6 @@ const ServerSchema = new Schema(
     privateKey: { type: String, default: null },
     status: { type: String, default: "unknown" },
     nginxInstalled: { type: Boolean, default: false },
-    // PM2 memory watchdog: auto-restart any app exceeding this MB (0 = disabled)
-    memoryLimitMb: { type: Number, default: 512 },
-    // CPU alert: send webhook if CPU stays above this % for 2 consecutive checks (0 = disabled)
-    cpuAlertThreshold: { type: Number, default: 85 },
-    // Rolling stats history: last 24 readings for sparkline charts
-    statsHistory: {
-      type: [{ ts: Date, cpu: Number, memoryUsed: Number, memoryTotal: Number }],
-      default: [],
-    },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
