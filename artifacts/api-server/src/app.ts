@@ -8,7 +8,6 @@ import { logger } from "./lib/logger";
 import { verifyToken } from "./routes/auth";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const app: Express = express();
 
 app.use(
@@ -24,6 +23,7 @@ app.use(
     },
   }),
 );
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -34,7 +34,6 @@ app.use("/api", (req: Request, res: Response, next: NextFunction): void => {
 
   const skipPaths = ["/api/auth/login", "/api/auth/check", "/api/health"];
   if (skipPaths.some((p) => req.path === p || req.path.startsWith(p))) { next(); return; }
-
   if (req.path.includes("/webhook/")) { next(); return; }
 
   const auth = req.headers["authorization"] ?? "";
@@ -52,7 +51,7 @@ app.use("/api", router);
 if (process.env["NODE_ENV"] === "production") {
   const staticDir = path.resolve(__dirname, "../../vps-manager/dist/public");
   app.use(express.static(staticDir));
-  app.get("*", (_req: Request, res: Response) => {
+  app.get("/{*splat}", (_req: Request, res: Response) => {  // ✅ Fixed for Express 5
     res.sendFile(path.join(staticDir, "index.html"));
   });
 }
