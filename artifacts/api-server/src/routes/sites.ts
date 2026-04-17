@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { Site, Server, Activity, CloudflareConfig, Settings, nextId, decryptSecret, getSettings } from "../lib/db";
+import { Site, Server, Activity, CloudflareConfig, Settings, nextId, getSettings } from "../lib/db";
 import { getCloudflareZones, findMatchingZone, upsertDnsRecord, deleteDnsRecordByName } from "../lib/cloudflareApi";
 import {
   CreateSiteBody,
@@ -24,8 +24,8 @@ function getSshOpts(serverData: Record<string, unknown>) {
     host: serverData.host as string,
     port: serverData.port as number,
     username: serverData.username as string,
-    password: decryptSecret(serverData.password as string),
-    privateKey: serverData.privateKey ? decryptSecret(serverData.privateKey as string) : null,
+    password: serverData.password as string,
+    privateKey: serverData.privateKey ? serverData.privateKey as string : null,
   };
 }
 

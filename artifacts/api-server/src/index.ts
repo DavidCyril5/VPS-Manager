@@ -1,7 +1,7 @@
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { Client as SshClient } from "ssh2";
-import { connectDB, Server, Site, decryptSecret } from "./lib/db";
+import { connectDB, Server, Site } from "./lib/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { runSshCommand } from "./lib/ssh";
@@ -24,8 +24,8 @@ async function autoCleanLogsIfNeeded(): Promise<void> {
         host: s.host as string,
         port: s.port as number,
         username: s.username as string,
-        password: decryptSecret(s.password as string),
-        privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null,
+        password: s.password as string,
+        privateKey: s.privateKey ? s.privateKey as string : null,
       };
       // Check combined size of out + error log in bytes, then truncate if over limit
       const checkAndClear = [
@@ -159,9 +159,9 @@ wss.on("connection", (ws, req) => {
     };
 
     if (s.privateKey) {
-      connectOpts.privateKey = decryptSecret(s.privateKey as string);
+      connectOpts.privateKey = s.privateKey as string;
     } else {
-      connectOpts.password = decryptSecret(s.password as string);
+      connectOpts.password = s.password as string;
     }
 
     sshConn.connect(connectOpts as Parameters<InstanceType<typeof SshClient>["connect"]>[0]);

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { Server, Activity, nextId, encryptSecret, decryptSecret } from "../lib/db";
+import { Server, Activity, nextId } from "../lib/db";
 import {
   CreateServerBody,
   UpdateServerBody,
@@ -32,8 +32,6 @@ router.post("/servers", async (req, res): Promise<void> => {
   }
   const id = await nextId("servers");
   const data = { ...parsed.data };
-  if (data.password) data.password = encryptSecret(data.password);
-  if (data.privateKey) data.privateKey = encryptSecret(data.privateKey);
   const server = await Server.create({ id, ...data, createdAt: new Date(), updatedAt: new Date() });
   res.status(201).json(safeServer(server.toObject() as Record<string, unknown>));
 });
@@ -64,8 +62,6 @@ router.patch("/servers/:id", async (req, res): Promise<void> => {
     return;
   }
   const updateData = { ...parsed.data } as Record<string, unknown>;
-  if (updateData.password) updateData.password = encryptSecret(updateData.password as string);
-  if (updateData.privateKey) updateData.privateKey = encryptSecret(updateData.privateKey as string);
   const server = await Server.findOneAndUpdate(
     { id: params.data.id },
     { ...updateData, updatedAt: new Date() },
@@ -109,8 +105,8 @@ router.post("/servers/:id/test-connection", async (req, res): Promise<void> => {
     host: s.host as string,
     port: s.port as number,
     username: s.username as string,
-    password: decryptSecret(s.password as string),
-    privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null,
+    password: s.password as string,
+    privateKey: s.privateKey ? s.privateKey as string : null,
   });
 
   await Server.findOneAndUpdate(
@@ -157,7 +153,7 @@ router.post("/servers/:id/install-nginx", async (req, res): Promise<void> => {
   `.trim();
 
   const result = await runSshCommand(
-    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey ? s.privateKey as string : null },
     installScript,
     120000
   );
@@ -196,7 +192,7 @@ router.post("/servers/:id/install-node", async (req, res): Promise<void> => {
   `.trim();
 
   const result = await runSshCommand(
-    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey ? s.privateKey as string : null },
     script,
     120000
   );
@@ -222,7 +218,7 @@ router.get("/servers/:id/node-status", async (req, res): Promise<void> => {
   const s = server.toObject() as Record<string, unknown>;
 
   const result = await runSshCommand(
-    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey ? s.privateKey as string : null },
     "node -v && npm -v 2>&1",
     15000
   );
@@ -240,7 +236,7 @@ router.get("/servers/:id/nginx-status", async (req, res): Promise<void> => {
   const s = server.toObject() as Record<string, unknown>;
 
   const result = await runSshCommand(
-    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey ? s.privateKey as string : null },
     "which nginx && nginx -v 2>&1 && systemctl is-active nginx 2>/dev/null || echo 'not-running'",
     15000
   );
@@ -272,7 +268,7 @@ router.get("/servers/:id/stats", async (req, res): Promise<void> => {
   `.trim();
 
   const result = await runSshCommand(
-    { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
+    { host: s.host as string, port: s.port as number, username: s.username as string, password: s.password as string, privateKey: s.privateKey ? s.privateKey as string : null },
     statsCmd,
     20000
   );

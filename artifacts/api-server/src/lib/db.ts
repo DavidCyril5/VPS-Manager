@@ -1,5 +1,4 @@
 import mongoose, { Schema, model } from "mongoose";
-import crypto from "crypto";
 
 const baseOpts = {
   toJSON: {
@@ -19,35 +18,6 @@ const baseOpts = {
   id: false,
 };
 
-// --- AES-256-GCM encryption for SSH credentials at rest ---
-const ENC_PREFIX = "enc:";
-
-function getEncKey(): Buffer {
-  const secret = process.env["SESSION_SECRET"] ?? "fallback-secret-change-me";
-  return crypto.createHash("sha256").update(secret).digest();
-}
-
-export function encryptSecret(plain: string): string {
-  const key = getEncKey();
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return ENC_PREFIX + Buffer.concat([iv, tag, encrypted]).toString("base64");
-}
-
-export function decryptSecret(enc: string | null | undefined): string {
-  if (!enc) return "";
-  if (!enc.startsWith(ENC_PREFIX)) return enc;
-  const key = getEncKey();
-  const buf = Buffer.from(enc.slice(ENC_PREFIX.length), "base64");
-  const iv = buf.subarray(0, 12);
-  const tag = buf.subarray(12, 28);
-  const ciphertext = buf.subarray(28);
-  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(tag);
-  return decipher.update(ciphertext) + decipher.final("utf8");
-}
 
 const CounterSchema = new Schema({ _id: String, seq: { type: Number, default: 0 } }, { id: false });
 const Counter = model("Counter", CounterSchema);
@@ -149,7 +119,6 @@ const SettingsSchema = new Schema(
   {
     _key: { type: String, default: "global", unique: true },
     alertWebhookUrl: { type: String, default: null },
-    adminPasswordHash: { type: String, default: null },
   },
   { ...baseOpts, id: false }
 );
