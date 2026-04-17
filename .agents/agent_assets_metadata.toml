@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Km8iGlOA0BbA4egxVva4G"
+uri = "file://README.md"
+type = "text"
+title = "VPS Deploy Hub — Full README"
