@@ -98,6 +98,7 @@ const SiteSchema = new Schema(
     sslExpiresAt: { type: Date, default: null },
     webhookToken: { type: String, default: null },
     cloudflareConfigId: { type: Number, default: null },
+    logSizeLimitMb: { type: Number, default: 50 },
     lastDeployedAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
