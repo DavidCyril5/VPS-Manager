@@ -850,7 +850,12 @@ router.post("/sites/:id/pm2/:action", async (req, res): Promise<void> => {
   else if (action === "start") cmd = `pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1`;
   else if (action === "logs") cmd = `pm2 logs "${pm2Name}" --nostream --lines 80 2>&1`;
   else if (action === "status") cmd = `pm2 show "${pm2Name}" 2>&1`;
-  else if (action === "clean-logs") cmd = `pm2 flush "${pm2Name}" 2>&1`;
+  else if (action === "clean-logs") {
+    // Truncate log files IN PLACE so the running PM2 process keeps its file
+    // handles open and never crashes. Using pm2 flush can delete/recreate the
+    // log files which breaks the open handle and causes 502s on the live site.
+    cmd = `truncate -s 0 ~/.pm2/logs/${pm2Name}-out.log 2>/dev/null; truncate -s 0 ~/.pm2/logs/${pm2Name}-error.log 2>/dev/null; echo "Logs cleared for ${pm2Name}"`;
+  }
 
   const result = await runSshCommand(getSshOpts(serverData), cmd, 30000);
   res.json(result);
