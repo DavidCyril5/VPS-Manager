@@ -70,6 +70,7 @@ const SiteSchema = new Schema(
     cloudflareConfigId: { type: Number, default: null },
     logSizeLimitMb: { type: Number, default: 50 },
     lastDeployedAt: { type: Date, default: null },
+    envVars: { type: [{ key: String, value: String, _id: false }], default: [] },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
@@ -119,6 +120,8 @@ const SettingsSchema = new Schema(
   {
     _key: { type: String, default: "global", unique: true },
     alertWebhookUrl: { type: String, default: null },
+    diskAlertThreshold: { type: Number, default: 85 },
+    ramAlertThreshold: { type: Number, default: 90 },
   },
   { ...baseOpts, id: false }
 );

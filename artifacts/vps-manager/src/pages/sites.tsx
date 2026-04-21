@@ -118,6 +118,12 @@ export default function Sites() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<number | null>(null);
   const [portAutoLoading, setPortAutoLoading] = useState(false);
   const [editPortAutoLoading, setEditPortAutoLoading] = useState(false);
+  const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([]);
+  const [envVarLoading, setEnvVarLoading] = useState(false);
+  const [envVarSubmitting, setEnvVarSubmitting] = useState(false);
+  const [newEnvKey, setNewEnvKey] = useState("");
+  const [newEnvValue, setNewEnvValue] = useState("");
+  const [showEnvVars, setShowEnvVars] = useState(false);
 
   const [repoBrowser, setRepoBrowser] = useState<{ open: boolean; loading: boolean; repos: GHRepo[]; search: string; error: string | null }>({ open: false, loading: false, repos: [], search: "", error: null });
 
@@ -182,6 +188,55 @@ export default function Sites() {
       toast({ title: "Could not auto-assign port", variant: "destructive" });
     } finally {
       setPortAutoLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (editTarget === null) {
+      setEnvVars([]);
+      setShowEnvVars(false);
+      setNewEnvKey("");
+      setNewEnvValue("");
+      return;
+    }
+    setEnvVarLoading(true);
+    fetch(`${base}/api/sites/${editTarget}/env-vars`)
+      .then((r) => r.json())
+      .then((d: { envVars: { key: string; value: string }[] }) => setEnvVars(d.envVars ?? []))
+      .catch(() => {})
+      .finally(() => setEnvVarLoading(false));
+  }, [editTarget]);
+
+  async function addEnvVar() {
+    if (!editTarget || !newEnvKey.trim()) return;
+    setEnvVarSubmitting(true);
+    try {
+      const r = await fetch(`${base}/api/sites/${editTarget}/env-vars`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: newEnvKey.trim(), value: newEnvValue }),
+      });
+      const d = await r.json() as { envVars: { key: string; value: string }[] };
+      setEnvVars(d.envVars ?? []);
+      setNewEnvKey("");
+      setNewEnvValue("");
+      toast({ title: `Env var ${newEnvKey.trim()} saved` });
+    } catch {
+      toast({ title: "Failed to save env var", variant: "destructive" });
+    } finally {
+      setEnvVarSubmitting(false);
+    }
+  }
+
+  async function deleteEnvVar(key: string) {
+    if (!editTarget) return;
+    try {
+      const r = await fetch(`${base}/api/sites/${editTarget}/env-vars/${encodeURIComponent(key)}`, { method: "DELETE" });
+      const d = await r.json() as { envVars: { key: string; value: string }[] };
+      setEnvVars(d.envVars ?? []);
+      toast({ title: `Removed ${key}` });
+    } catch {
+      toast({ title: "Failed to remove env var", variant: "destructive" });
     }
   }
 
@@ -1046,6 +1101,72 @@ export default function Sites() {
                     )}
                     </div>
                   </div>
+                  {/* Env Var Manager */}
+                  <div className="border border-border/60 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setShowEnvVars((v) => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 bg-muted/40 hover:bg-muted/60 transition-colors text-sm font-medium"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Key className="h-3.5 w-3.5 text-muted-foreground" />
+                        Environment Variables
+                        {envVars.length > 0 && (
+                          <span className="bg-primary/15 text-primary text-xs px-1.5 py-0.5 rounded-full">{envVars.length}</span>
+                        )}
+                      </span>
+                      <span className="text-muted-foreground text-xs">{showEnvVars ? "▲" : "▼"}</span>
+                    </button>
+                    {showEnvVars && (
+                      <div className="p-3 space-y-3">
+                        <p className="text-xs text-muted-foreground">These are injected into the PM2 process env on every deploy. Values are stored in the database — do not store secrets you need extra protection for.</p>
+                        {envVarLoading ? (
+                          <p className="text-xs text-muted-foreground">Loading…</p>
+                        ) : envVars.length > 0 ? (
+                          <div className="space-y-1">
+                            {envVars.map((ev) => (
+                              <div key={ev.key} className="flex items-center gap-2 bg-background rounded-lg px-3 py-1.5 text-sm font-mono group">
+                                <span className="text-primary flex-shrink-0">{ev.key}</span>
+                                <span className="text-muted-foreground">=</span>
+                                <span className="truncate text-muted-foreground flex-1">{ev.value ? "••••••" : <em className="not-italic opacity-40">empty</em>}</span>
+                                <button
+                                  onClick={() => deleteEnvVar(ev.key)}
+                                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity ml-auto flex-shrink-0"
+                                  title={`Remove ${ev.key}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">No env vars set yet.</p>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          <input
+                            value={newEnvKey}
+                            onChange={(e) => setNewEnvKey(e.target.value)}
+                            placeholder="KEY"
+                            className="w-32 rounded-lg bg-background border border-border px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          <input
+                            value={newEnvValue}
+                            onChange={(e) => setNewEnvValue(e.target.value)}
+                            placeholder="value"
+                            className="flex-1 rounded-lg bg-background border border-border px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          <button
+                            onClick={addEnvVar}
+                            disabled={envVarSubmitting || !newEnvKey.trim()}
+                            className="flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-40"
+                          >
+                            {envVarSubmitting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                            Set
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => handleEditSaveAndRedeploy(true)} disabled={updateSite.isPending} className="flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
                       <Rocket className="h-3.5 w-3.5" />

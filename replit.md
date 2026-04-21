@@ -46,7 +46,7 @@ Pages:
 - `/terminal` — Live SSH terminal (xterm.js + WebSocket)
 - `/cloudflare` — Add Cloudflare accounts, create DNS A records
 - `/activity` — Deployment activity log
-- `/settings` — Deploy failure alert webhook URL, admin password change
+- `/settings` — Alert webhook URL (deploy failures + SSL expiry + resource alerts), disk/RAM alert thresholds, admin password change
 - `/login` — Password login page (shown when `ADMIN_PASSWORD` env var is set)
 
 ### API Server (Express 5, previewPath: /api)
@@ -74,7 +74,10 @@ Routes:
 - `GET /api/sites/:id/commits` — Recent Git commits for rollback
 - `POST /api/sites/:id/rollback` — Roll back to a previous Git commit
 - `POST /api/sites/:id/setup-ssl-renewal` — Install certbot cron auto-renewal
-- `POST /api/webhook/:token` — Auto-deploy trigger (public, no auth)
+- `GET /api/sites/:id/env-vars` — List env vars stored for site
+- `PUT /api/sites/:id/env-vars` — Add or update an env var (key/value)
+- `DELETE /api/sites/:id/env-vars/:key` — Remove an env var
+- `POST /api/webhook/:token` — Auto-deploy trigger (public, no auth); also reloads PM2 after deploy
 - `WS /api/terminal?serverId=N` — WebSocket SSH shell (xterm.js)
 - `POST /api/auth/login` — Password login, returns JWT token
 - `GET /api/auth/check` — Verify auth token / check if auth is enabled
@@ -83,11 +86,11 @@ Routes:
 ### MongoDB Collections (via Mongoose)
 
 - `servers` — SSH connection info (AES-256-GCM encrypted credentials), status, nginx flag; integer `id` via counter
-- `sites` — Domain, repo, deploy path, type, status, webhook token, ssl expiry
+- `sites` — Domain, repo, deploy path, type, status, webhook token, ssl expiry, envVars (array of key/value for PM2 env injection)
 - `cloudflareconfigs` — CF API tokens
 - `activity` — Deployment event log
 - `counters` — Auto-increment ID sequences
-- `settings` — Global config (alertWebhookUrl, adminPasswordHash)
+- `settings` — Global config (alertWebhookUrl, diskAlertThreshold, ramAlertThreshold, adminPasswordHash)
 
 ### Security
 

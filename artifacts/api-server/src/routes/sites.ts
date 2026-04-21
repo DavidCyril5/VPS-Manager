@@ -132,6 +132,12 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
     const startCommand = (siteData.startCommand as string | null) || defaultStart;
     const pm2Name = domain.replace(/[^a-zA-Z0-9]/g, "-");
     const pm2ConfigPath = `/tmp/pm2-${pm2Name}.json`;
+    // Merge custom env vars on top of defaults
+    const rawEnvVars = (siteData.envVars as Array<{ key: string; value: string }> | null) ?? [];
+    const envOverrides: Record<string, string> = {};
+    for (const { key, value } of rawEnvVars) {
+      if (key) envOverrides[key] = value;
+    }
     // Use a JSON config file so pm2 always receives the correct PORT env var,
     // even when running as a daemon that doesn't inherit the shell's environment.
     const pm2Config = JSON.stringify({
@@ -139,14 +145,16 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       script: siteType === "python" ? startCommand : "npm",
       args: siteType === "python" ? undefined : "run start",
       cwd: deployPath,
-      env: { PORT: String(appPort), NODE_ENV: "production" },
+      env: { PORT: String(appPort), NODE_ENV: "production", ...envOverrides },
     });
+    // Zero-downtime: reload if process already exists, otherwise start fresh
+    const pm2StartCmd = `if pm2 list --no-color 2>/dev/null | grep -q " ${pm2Name} "; then pm2 reload "${pm2Name}" --update-env 2>&1; else pm2 start ${pm2ConfigPath} 2>&1; fi`;
     pm2Script = [
       ENSURE_NODE,
       `command -v pm2 >/dev/null 2>&1 || npm install -g pm2`,
       `cd ${deployPath}`,
       `echo '${pm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`,
-      `pm2 startOrRestart ${pm2ConfigPath}`,
+      pm2StartCmd,
       `pm2 save`,
     ].join(" && ");
   }
@@ -792,15 +800,22 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
     `  rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
     `fi`,
   ].join("\n");
-  const deployScript = buildCommand
+  const gitAndBuildScript = buildCommand
     ? `${gitBlock} && cd ${deployPath} && ${buildCommand}`
     : gitBlock;
+
+  // Append PM2 reload/restart for server-side apps
+  const pm2Name = siteData.domain ? (siteData.domain as string).replace(/[^a-zA-Z0-9]/g, "-") : null;
+  const pm2RestartCmd = pm2Name && (siteTypeW === "nodejs" || siteTypeW === "python")
+    ? ` && (pm2 reload "${pm2Name}" --update-env 2>/dev/null || pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1) && pm2 save`
+    : "";
+  const deployScript = gitAndBuildScript + pm2RestartCmd;
 
   await Site.findOneAndUpdate({ id: siteData.id }, { status: "deploying", updatedAt: new Date() });
 
   const sshOpts = getSshOpts(serverData);
 
-  runSshCommand(sshOpts, deployScript, 120000).then(async (result) => {
+  runSshCommand(sshOpts, deployScript, 180000).then(async (result) => {
     await Site.findOneAndUpdate(
       { id: siteData.id },
       { status: result.success ? "active" : "failed", ...(result.success ? { lastDeployedAt: new Date() } : {}), updatedAt: new Date() }
@@ -947,6 +962,45 @@ router.post("/sites/:id/rollback", async (req, res): Promise<void> => {
     sendAlertWebhook(siteData.name as string, domain, result.output.slice(-500)).catch(() => {});
   }
   res.json(result);
+});
+
+// --- Env var management ---
+router.get("/sites/:id/env-vars", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const d = site.toObject() as Record<string, unknown>;
+  res.json({ envVars: (d.envVars as Array<{ key: string; value: string }>) ?? [] });
+});
+
+router.put("/sites/:id/env-vars", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const { key, value } = req.body as { key?: string; value?: string };
+  if (!key || key.trim() === "") { res.status(400).json({ error: "key is required" }); return; }
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const d = site.toObject() as Record<string, unknown>;
+  const existing = (d.envVars as Array<{ key: string; value: string }>) ?? [];
+  const idx = existing.findIndex((e) => e.key === key.trim());
+  if (idx >= 0) {
+    existing[idx] = { key: key.trim(), value: value ?? "" };
+  } else {
+    existing.push({ key: key.trim(), value: value ?? "" });
+  }
+  await Site.findOneAndUpdate({ id }, { envVars: existing, updatedAt: new Date() });
+  res.json({ envVars: existing });
+});
+
+router.delete("/sites/:id/env-vars/:key", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const key = decodeURIComponent(req.params.key);
+  const site = await Site.findOne({ id });
+  if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+  const d = site.toObject() as Record<string, unknown>;
+  const existing = (d.envVars as Array<{ key: string; value: string }>) ?? [];
+  const updated = existing.filter((e) => e.key !== key);
+  await Site.findOneAndUpdate({ id }, { envVars: updated, updatedAt: new Date() });
+  res.json({ envVars: updated });
 });
 
 // --- SSL auto-renewal setup ---
