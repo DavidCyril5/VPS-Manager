@@ -11,7 +11,7 @@ import {
   useListCloudflareConfigs,
   getListSitesQueryKey,
 } from "@workspace/api-client-react";
-import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText, RotateCcw, RefreshCw, Play, Square, Timer, AlertCircle, Trash, MoreVertical } from "lucide-react";
+import { Globe, Plus, Trash2, Rocket, ShieldCheck, ExternalLink, Copy, Check, FileCode, Clock, Key, Save, Pencil, X, Search, BookOpen, Lock, Unlock, ScrollText, RotateCcw, RefreshCw, Play, Square, Timer, AlertCircle, Trash, MoreVertical, Wand2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LogModal } from "@/components/log-modal";
@@ -116,6 +116,8 @@ export default function Sites() {
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [sslRenewalLoading, setSslRenewalLoading] = useState<Set<number>>(new Set());
   const [mobileMenuOpen, setMobileMenuOpen] = useState<number | null>(null);
+  const [portAutoLoading, setPortAutoLoading] = useState(false);
+  const [editPortAutoLoading, setEditPortAutoLoading] = useState(false);
 
   const [repoBrowser, setRepoBrowser] = useState<{ open: boolean; loading: boolean; repos: GHRepo[]; search: string; error: string | null }>({ open: false, loading: false, repos: [], search: "", error: null });
 
@@ -161,6 +163,44 @@ export default function Sites() {
       if (showToast) {
         toast({ title: "Failed to clean PM2 logs", variant: "destructive" });
       }
+    }
+  }
+
+  async function fetchAvailablePort(serverId: number) {
+    if (!serverId) return;
+    setPortAutoLoading(true);
+    try {
+      const r = await fetch(`${base}/api/servers/${serverId}/available-port`);
+      const d = await r.json() as { port?: number; error?: string };
+      if (d.port) {
+        setForm((f) => ({ ...f, port: d.port! }));
+        toast({ title: `Port ${d.port} auto-assigned`, description: "First free port on the server" });
+      } else {
+        toast({ title: d.error ?? "No available port found", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not auto-assign port", variant: "destructive" });
+    } finally {
+      setPortAutoLoading(false);
+    }
+  }
+
+  async function fetchAvailablePortForEdit(serverId: number) {
+    if (!serverId) return;
+    setEditPortAutoLoading(true);
+    try {
+      const r = await fetch(`${base}/api/servers/${serverId}/available-port`);
+      const d = await r.json() as { port?: number; error?: string };
+      if (d.port) {
+        setEditForm((f) => ({ ...f, port: d.port! }));
+        toast({ title: `Port ${d.port} auto-assigned`, description: "First free port on the server" });
+      } else {
+        toast({ title: d.error ?? "No available port found", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not auto-assign port", variant: "destructive" });
+    } finally {
+      setEditPortAutoLoading(false);
     }
   }
 
@@ -294,6 +334,12 @@ export default function Sites() {
       }
       if (name === "siteType" && !f.buildCommand) {
         updated.buildCommand = buildSuggestions[value] ?? "";
+      }
+      if (name === "siteType" && (value === "nodejs" || value === "python") && f.serverId) {
+        setTimeout(() => fetchAvailablePort(f.serverId), 0);
+      }
+      if (name === "serverId" && (f.siteType === "nodejs" || f.siteType === "python") && Number(value)) {
+        setTimeout(() => fetchAvailablePort(Number(value)), 0);
       }
       return updated;
     });
@@ -639,7 +685,22 @@ export default function Sites() {
                 <label className="block text-sm text-muted-foreground mb-1">
                   App Port <span className="opacity-60 text-xs">(port your app listens on)</span>
                 </label>
-                <input name="port" type="number" value={form.port} onChange={handleChange} placeholder="3000" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                <div className="flex gap-2">
+                  <input name="port" type="number" value={form.port} onChange={handleChange} placeholder="3000" className="flex-1 rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                  <button
+                    type="button"
+                    onClick={() => fetchAvailablePort(form.serverId)}
+                    disabled={!form.serverId || portAutoLoading}
+                    className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                    title="Auto-assign the next free port on the server"
+                  >
+                    {portAutoLoading
+                      ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      : <Wand2 className="h-3.5 w-3.5" />}
+                    <span className="hidden sm:inline">Auto</span>
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Click <strong>Auto</strong> to detect the first free port on the server</p>
               </div>
               <div>
                 <label className="block text-sm text-muted-foreground mb-1">
@@ -942,7 +1003,21 @@ export default function Sites() {
                         <label className="block text-xs text-muted-foreground mb-1">
                           App Port <span className="opacity-60">(port your app listens on)</span>
                         </label>
-                        <input name="port" type="number" value={editForm.port} onChange={handleEditChange} placeholder="3000" className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                        <div className="flex gap-2">
+                          <input name="port" type="number" value={editForm.port} onChange={handleEditChange} placeholder="3000" className="flex-1 rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                          <button
+                            type="button"
+                            onClick={() => fetchAvailablePortForEdit(site.serverId)}
+                            disabled={editPortAutoLoading}
+                            className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                            title="Auto-assign the next free port on the server"
+                          >
+                            {editPortAutoLoading
+                              ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              : <Wand2 className="h-3.5 w-3.5" />}
+                            <span className="hidden sm:inline">Auto</span>
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">

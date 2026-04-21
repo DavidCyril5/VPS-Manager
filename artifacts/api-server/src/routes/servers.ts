@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { Server, Activity, nextId } from "../lib/db";
+import { Server, Site, Activity, nextId } from "../lib/db";
 import {
   CreateServerBody,
   UpdateServerBody,
@@ -298,6 +298,65 @@ router.get("/servers/:id/stats", async (req, res): Promise<void> => {
   }
 
   res.json({ cpu, memoryUsed, memoryTotal, diskUsed, diskTotal, uptime });
+});
+
+const RESERVED_PORTS = new Set([
+  3306, 5432, 5433, 6379, 6000, 6001, 8080, 8443, 8888, 9090, 9200, 9300,
+  27017, 27018, 11211, 2181, 2375, 2376,
+]);
+
+router.get("/servers/:id/available-port", async (req, res): Promise<void> => {
+  const params = GetServerParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const server = await Server.findOne({ id: params.data.id });
+  if (!server) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+  const s = server.toObject() as Record<string, unknown>;
+  const sshOpts = {
+    host: s.host as string,
+    port: s.port as number,
+    username: s.username as string,
+    password: s.password as string,
+    privateKey: s.privateKey ? (s.privateKey as string) : null,
+  };
+
+  const serverUsedPorts = new Set<number>();
+  const result = await runSshCommand(
+    sshOpts,
+    "ss -tlnp 2>/dev/null | awk 'NR>1 {print $4}' | grep -oE '[0-9]+$' | sort -un",
+    10000
+  ).catch(() => null);
+  if (result?.success) {
+    for (const line of result.output.split("\n")) {
+      const p = parseInt(line.trim(), 10);
+      if (!isNaN(p) && p > 0) serverUsedPorts.add(p);
+    }
+  }
+
+  const dbUsedPorts = new Set<number>();
+  const sites = await Site.find({ serverId: params.data.id, port: { $ne: null } });
+  for (const site of sites) {
+    const p = (site.toObject() as Record<string, unknown>).port as number | null;
+    if (p) dbUsedPorts.add(p);
+  }
+
+  let port = 3001;
+  while (port <= 9999) {
+    if (!serverUsedPorts.has(port) && !dbUsedPorts.has(port) && !RESERVED_PORTS.has(port)) break;
+    port++;
+  }
+
+  if (port > 9999) {
+    res.status(503).json({ error: "No available ports found in range 3001–9999" });
+    return;
+  }
+
+  res.json({ port });
 });
 
 export default router;
