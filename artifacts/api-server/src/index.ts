@@ -5,6 +5,7 @@ import { connectDB, Server, Site } from "./lib/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { runSshCommand } from "./lib/ssh";
+import { startAutoHealMonitor } from "./lib/monitor";
 
 // --- Auto log-clear background job ---
 // Groups sites by server so we open only one SSH connection per server.
@@ -241,6 +242,8 @@ connectDB()
     void autoCleanLogsIfNeeded();
     setInterval(() => { void autoCleanLogsIfNeeded(); }, LOG_CHECK_INTERVAL_MS);
     logger.info({ intervalMs: LOG_CHECK_INTERVAL_MS }, "Auto log-clear job scheduled");
+    // Start auto-heal monitor — checks all sites every 5 minutes and restarts downed PM2 processes.
+    startAutoHealMonitor();
     httpServer.listen(port, (err?: Error) => {
       if (err) {
         logger.error({ err }, "Error listening on port");

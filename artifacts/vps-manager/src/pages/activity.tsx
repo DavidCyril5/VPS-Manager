@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Activity, CheckCircle2, XCircle, Loader2, Trash2, RefreshCw, ChevronDown, ChevronUp, Globe, Server } from "lucide-react";
+import { Activity, CheckCircle2, XCircle, Loader2, Trash2, RefreshCw, ChevronDown, ChevronUp, Globe, Server, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -23,6 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
   nginx_install: "Nginx",
   dns_setup: "DNS",
   connection_test: "Connection",
+  auto_heal: "Auto-Heal",
   error: "Error",
 };
 
@@ -32,6 +33,7 @@ const TYPE_COLORS: Record<string, string> = {
   nginx_install: "bg-amber-900/40 text-amber-400 border-amber-800/50",
   dns_setup: "bg-purple-900/40 text-purple-400 border-purple-800/50",
   connection_test: "bg-cyan-900/40 text-cyan-400 border-cyan-800/50",
+  auto_heal: "bg-orange-900/40 text-orange-400 border-orange-800/50",
   error: "bg-red-900/40 text-red-400 border-red-800/50",
 };
 
@@ -139,6 +141,7 @@ const TYPE_TABS = [
   { value: "nginx_install", label: "Nginx" },
   { value: "dns_setup", label: "DNS" },
   { value: "connection_test", label: "Connection" },
+  { value: "auto_heal", label: "Auto-Heal" },
   { value: "error", label: "Error" },
 ];
 
@@ -187,6 +190,11 @@ export default function ActivityPage() {
             <span className="hidden sm:inline">Clear logs</span>
           </button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-900/20 border border-orange-800/40 text-orange-300 text-xs">
+        <ShieldCheck className="h-4 w-4 shrink-0 text-orange-400" />
+        <span><span className="font-semibold">Auto-heal monitoring is active.</span> Your sites are checked every 5 minutes — downed Node.js/Python apps are restarted automatically.</span>
       </div>
 
       <div className="space-y-2">
