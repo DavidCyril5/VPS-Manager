@@ -8,7 +8,7 @@ import {
   useInstallNginx,
   getListServersQueryKey,
 } from "@workspace/api-client-react";
-import { Server, Plus, Trash2, Wifi, Settings2, CheckCircle2, XCircle, WifiOff, Pencil, X } from "lucide-react";
+import { Server, Plus, Trash2, Wifi, Settings2, CheckCircle2, XCircle, WifiOff, Pencil, X, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -35,6 +35,8 @@ export default function Servers() {
   const [editTarget, setEditTarget] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ name: "", host: "", port: 22, username: "", password: "", privateKey: "" });
   const [editSaving, setEditSaving] = useState(false);
+  const [watchdogLoading, setWatchdogLoading] = useState<number | null>(null);
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   const [form, setForm] = useState({
     name: "",
     host: "",
@@ -62,7 +64,6 @@ export default function Servers() {
   async function handleEditSave() {
     if (!editTarget) return;
     setEditSaving(true);
-    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     try {
       const body: Record<string, unknown> = { ...editForm };
       if (!body.password) delete body.password;
@@ -80,6 +81,28 @@ export default function Servers() {
       toast({ title: "Failed to update server", variant: "destructive" });
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  async function handleSetupWatchdog(id: number) {
+    setWatchdogLoading(id);
+    try {
+      const r = await fetch(`${base}/api/servers/${id}/setup-watchdog`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("vpm-token") ?? ""}` },
+      });
+      const d = await r.json() as { success: boolean; output: string };
+      setLogModal({
+        title: d.success ? "Watchdog Installed" : "Watchdog Setup Failed",
+        success: d.success,
+        output: d.output,
+      });
+      if (d.success) toast({ title: "Watchdog active — sites will auto-restart every minute if crashed" });
+      else toast({ title: "Watchdog setup failed", variant: "destructive" });
+    } catch {
+      toast({ title: "Failed to connect to server", variant: "destructive" });
+    } finally {
+      setWatchdogLoading(null);
     }
   }
 
@@ -270,6 +293,15 @@ export default function Servers() {
                     Install Nginx
                   </button>
                 )}
+                <button
+                  onClick={() => handleSetupWatchdog(server.id)}
+                  disabled={watchdogLoading === server.id}
+                  className="flex items-center gap-1.5 text-xs bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                  title="Install a cron-based watchdog that restarts crashed apps every minute, and configure PM2 to survive reboots"
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  {watchdogLoading === server.id ? "Installing…" : "Watchdog"}
+                </button>
                 <Link href={`/servers/${server.id}`} className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/70 text-foreground px-3 py-1.5 rounded-lg transition-colors">
                   <Settings2 className="h-3 w-3" />
                   Details
