@@ -143,16 +143,41 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
     }
     // Use a JSON config file so pm2 always receives the correct PORT env var,
     // even when running as a daemon that doesn't inherit the shell's environment.
-    const pm2Config = JSON.stringify({
+    const baseEnv = { PORT: String(appPort), NODE_ENV: "production", ...envOverrides };
+    // For Next.js: use the next binary directly with explicit -p PORT so it can't
+    // be overridden by a hardcoded port in package.json scripts.
+    // For generic Node.js: fall back to npm run start.
+    const nextjsPm2Config = JSON.stringify({
       name: pm2Name,
-      script: siteType === "python" ? startCommand : "npm",
-      args: siteType === "python" ? undefined : "run start",
+      script: `${deployPath}/node_modules/.bin/next`,
+      args: `start -H 0.0.0.0 -p ${appPort}`,
       cwd: deployPath,
-      env: { PORT: String(appPort), NODE_ENV: "production", ...envOverrides },
+      env: baseEnv,
       max_restarts: 20,
       restart_delay: 5000,
       min_uptime: "10s",
     });
+    const genericPm2Config = JSON.stringify({
+      name: pm2Name,
+      script: siteType === "python" ? startCommand : "npm",
+      args: siteType === "python" ? undefined : "run start",
+      cwd: deployPath,
+      env: baseEnv,
+      max_restarts: 20,
+      restart_delay: 5000,
+      min_uptime: "10s",
+    });
+    // Detect Next.js at deploy time and pick the right start config.
+    // This ensures PORT is always respected even if package.json has it hardcoded.
+    const writeConfigCmd = siteType === "python"
+      ? `echo '${genericPm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`
+      : [
+          `if [ -x "${deployPath}/node_modules/.bin/next" ]; then`,
+          `  echo '${nextjsPm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath};`,
+          `else`,
+          `  echo '${genericPm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath};`,
+          `fi`,
+        ].join(" ");
     // Always delete then start fresh — avoids "process not found" errors from pm2 reload
     // that occur when the process has crashed or is in a bad state
     pm2Script = [
@@ -160,7 +185,7 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       `command -v pm2 >/dev/null 2>&1 || npm install -g pm2`,
       `mkdir -p ${pm2ConfigDir}`,
       `cd ${deployPath}`,
-      `echo '${pm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`,
+      writeConfigCmd,
       `pm2 delete "${pm2Name}" 2>/dev/null; pm2 start ${pm2ConfigPath}`,
       `pm2 save`,
     ].join(" && ");
