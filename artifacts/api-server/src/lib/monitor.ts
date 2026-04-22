@@ -114,16 +114,20 @@ async function reassignPort(
   const defaultStart = siteType === "python"
     ? `gunicorn app:app --bind 0.0.0.0:${newPort} --daemon`
     : "npm run start";
-  const pm2ConfigPath = `/tmp/pm2-${pm2Name}.json`;
+  const pm2ConfigPath = `/root/.pm2-apps/${pm2Name}.json`;
   const pm2Config = JSON.stringify({
     name: pm2Name,
     script: siteType === "python" ? (startCommand || defaultStart) : "npm",
     args: siteType === "python" ? undefined : "run start",
     cwd: deployPath,
     env: { PORT: String(newPort), NODE_ENV: "production" },
+    max_restarts: 20,
+    restart_delay: 5000,
+    min_uptime: "10s",
   });
   const script = [
     `pm2 delete "${pm2Name}" 2>/dev/null || true`,
+    `mkdir -p /root/.pm2-apps`,
     `echo '${pm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`,
     `pm2 start ${pm2ConfigPath}`,
     `pm2 save`,
@@ -200,7 +204,8 @@ export async function runAutoHealCheck(): Promise<void> {
             details = result.output;
           }
         } else {
-          const cmd = `pm2 restart "${pm2Name}" 2>&1 || pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1`;
+          // Delete then start so we recover even if PM2 hit max_restarts and stopped trying
+          const cmd = `(pm2 restart "${pm2Name}" 2>/dev/null && echo "restarted") || (pm2 delete "${pm2Name}" 2>/dev/null; pm2 start /root/.pm2-apps/${pm2Name}.json 2>&1 && pm2 save)`;
           const result = await runSshCommand(sshOpts, cmd, 30000);
           success = result.success;
           details = result.output ?? "";

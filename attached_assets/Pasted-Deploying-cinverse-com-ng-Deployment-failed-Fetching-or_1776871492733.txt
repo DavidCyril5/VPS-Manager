@@ -1,0 +1,83 @@
+Deploying cinverse.com.ng
+
+Deployment failed
+
+
+Fetching origin
+HEAD is now at 572e8e1 Add monetization script and update service worker
+
+up to date, audited 947 packages in 2s
+
+149 packages are looking for funding
+  run `npm fund` for details
+
+20 vulnerabilities (2 low, 5 moderate, 12 high, 1 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.
+
+> nextn@0.1.0 build
+> next build
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+   ▲ Next.js 15.5.15
+   - Environments: .env
+
+   Creating an optimized production build ...
+> [PWA] Compile server
+> [PWA] Compile server
+> [PWA] Compile client (static)
+> [PWA] Auto register service worker with: /var/www/cinverse-com-ng/node_modules/next-pwa/register.js
+> [PWA] Service worker: /var/www/cinverse-com-ng/public/pwa-sw.js
+> [PWA]   url: /pwa-sw.js
+> [PWA]   scope: /
+ ✓ Compiled successfully in 6.8s
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+   Generating static pages (0/15) ...
+   Generating static pages (3/15) 
+   Generating static pages (7/15) 
+   Generating static pages (11/15) 
+ ✓ Generating static pages (15/15)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS  Revalidate  Expire
+┌ ○ /                                    1.97 kB         151 kB
+├ ○ /_not-found                            147 B         102 kB
+├ ƒ /api/download                          147 B         102 kB
+├ ƒ /api/info                              147 B         102 kB
+├ ƒ /api/ratings                           147 B         102 kB
+├ ƒ /api/search                            147 B         102 kB
+├ ƒ /api/sources                           147 B         102 kB
+├ ƒ /api/user-profile                      147 B         102 kB
+├ ○ /downloads                           7.78 kB         131 kB
+├ ƒ /movie/[id]                          44.3 kB         197 kB
+├ ƒ /recommendations                     2.31 kB         123 kB
+├ ○ /robots.txt                            147 B         102 kB
+├ ƒ /search                              2.31 kB         123 kB
+├ ○ /sitemap.xml                           147 B         102 kB          1d      1y
+└ ○ /trending                            2.31 kB         123 kB          1h      1y
++ First Load JS shared by all             102 kB
+  ├ chunks/255-4f212684648fcab9.js         46 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          1.98 kB
+
+
+ƒ Middleware                             34.4 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+[PM2] Applying action reloadProcessId on app [cinverse-com-ng](ids: [ 0 ])
+[PM2][ERROR] Process 0 not found
+✗ Deploy failed — scroll up to see the error

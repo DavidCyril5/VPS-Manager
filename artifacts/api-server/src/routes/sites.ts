@@ -131,7 +131,10 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       : `npm run start`;
     const startCommand = (siteData.startCommand as string | null) || defaultStart;
     const pm2Name = domain.replace(/[^a-zA-Z0-9]/g, "-");
-    const pm2ConfigPath = `/tmp/pm2-${pm2Name}.json`;
+    // Store config in a permanent location so auto-heal can always restart it
+    // even after /tmp is cleared on reboot
+    const pm2ConfigDir = `/root/.pm2-apps`;
+    const pm2ConfigPath = `${pm2ConfigDir}/${pm2Name}.json`;
     // Merge custom env vars on top of defaults
     const rawEnvVars = (siteData.envVars as Array<{ key: string; value: string }> | null) ?? [];
     const envOverrides: Record<string, string> = {};
@@ -146,15 +149,19 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       args: siteType === "python" ? undefined : "run start",
       cwd: deployPath,
       env: { PORT: String(appPort), NODE_ENV: "production", ...envOverrides },
+      max_restarts: 20,
+      restart_delay: 5000,
+      min_uptime: "10s",
     });
-    // Zero-downtime: reload if process already exists, otherwise start fresh
-    const pm2StartCmd = `if pm2 list --no-color 2>/dev/null | grep -q " ${pm2Name} "; then pm2 reload "${pm2Name}" --update-env 2>&1; else pm2 start ${pm2ConfigPath} 2>&1; fi`;
+    // Always delete then start fresh — avoids "process not found" errors from pm2 reload
+    // that occur when the process has crashed or is in a bad state
     pm2Script = [
       ENSURE_NODE,
       `command -v pm2 >/dev/null 2>&1 || npm install -g pm2`,
+      `mkdir -p ${pm2ConfigDir}`,
       `cd ${deployPath}`,
       `echo '${pm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`,
-      pm2StartCmd,
+      `pm2 delete "${pm2Name}" 2>/dev/null; pm2 start ${pm2ConfigPath}`,
       `pm2 save`,
     ].join(" && ");
   }
@@ -807,7 +814,7 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
   // Append PM2 reload/restart for server-side apps
   const pm2Name = siteData.domain ? (siteData.domain as string).replace(/[^a-zA-Z0-9]/g, "-") : null;
   const pm2RestartCmd = pm2Name && (siteTypeW === "nodejs" || siteTypeW === "python")
-    ? ` && (pm2 reload "${pm2Name}" --update-env 2>/dev/null || pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1) && pm2 save`
+    ? ` && (pm2 restart "${pm2Name}" 2>/dev/null || pm2 start /root/.pm2-apps/${pm2Name}.json 2>&1) && pm2 save`
     : "";
   const deployScript = gitAndBuildScript + pm2RestartCmd;
 
@@ -860,9 +867,9 @@ router.post("/sites/:id/pm2/:action", async (req, res): Promise<void> => {
   const serverData = server.toObject() as Record<string, unknown>;
   const pm2Name = (siteData.domain as string).replace(/[^a-zA-Z0-9]/g, "-");
   let cmd = "";
-  if (action === "restart") cmd = `pm2 restart "${pm2Name}" 2>&1 || pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1`;
+  if (action === "restart") cmd = `pm2 restart "${pm2Name}" 2>&1 || pm2 start /root/.pm2-apps/${pm2Name}.json 2>&1`;
   else if (action === "stop") cmd = `pm2 stop "${pm2Name}" 2>&1`;
-  else if (action === "start") cmd = `pm2 startOrRestart /tmp/pm2-${pm2Name}.json 2>&1`;
+  else if (action === "start") cmd = `pm2 start /root/.pm2-apps/${pm2Name}.json 2>&1`;
   else if (action === "logs") cmd = `pm2 logs "${pm2Name}" --nostream --lines 80 2>&1`;
   else if (action === "status") cmd = `pm2 show "${pm2Name}" 2>&1`;
   else if (action === "clean-logs") {
