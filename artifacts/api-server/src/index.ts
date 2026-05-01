@@ -4,6 +4,7 @@ import { Client as SshClient } from "ssh2";
 import { connectDB, Server, decryptSecret } from "./lib/db";
 import app from "./app";
 import { logger } from "./lib/logger";
+import { normalizePrivateKey } from "./lib/ssh";
 
 const rawPort = process.env["PORT"];
 
@@ -110,7 +111,7 @@ wss.on("connection", (ws, req) => {
     };
 
     if (s.privateKey) {
-      connectOpts.privateKey = decryptSecret(s.privateKey as string);
+      connectOpts.privateKey = normalizePrivateKey(decryptSecret(s.privateKey as string));
     } else {
       connectOpts.password = decryptSecret(s.password as string);
     }

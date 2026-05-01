@@ -9,6 +9,32 @@ export interface SshConnectionOptions {
   privateKey?: string | null;
 }
 
+/**
+ * Normalizes a PEM private key so ssh2 can parse it reliably.
+ * Handles: Windows line endings, literal \n sequences, missing header newlines.
+ */
+export function normalizePrivateKey(key: string): string {
+  // Replace literal \n sequences (escaped newlines) with actual newlines
+  let k = key.replace(/\\n/g, "\n");
+  // Normalize Windows line endings
+  k = k.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // Trim surrounding whitespace
+  k = k.trim();
+  // If the whole key ended up on one line (no newlines between header and body),
+  // reconstruct proper PEM line breaks at 64-char intervals
+  const header = k.match(/^-----BEGIN [^-]+-----/)?.[0];
+  const footer = k.match(/-----END [^-]+-----$/)?.[0];
+  if (header && footer) {
+    const body = k.slice(header.length, k.length - footer.length).replace(/\s+/g, "");
+    if (!body.includes("\n") && body.length > 64) {
+      const lines: string[] = [];
+      for (let i = 0; i < body.length; i += 64) lines.push(body.slice(i, i + 64));
+      k = `${header}\n${lines.join("\n")}\n${footer}`;
+    }
+  }
+  return k;
+}
+
 export interface SshResult {
   success: boolean;
   output: string;
@@ -81,7 +107,7 @@ export function runSshCommand(
     };
 
     if (options.privateKey) {
-      connectOpts.privateKey = options.privateKey;
+      connectOpts.privateKey = normalizePrivateKey(options.privateKey!);
     } else {
       connectOpts.password = options.password;
     }
@@ -134,7 +160,7 @@ export function runSshLiveStream(
     readyTimeout: 15000,
   };
   if (options.privateKey) {
-    connectOpts.privateKey = options.privateKey;
+    connectOpts.privateKey = normalizePrivateKey(options.privateKey!);
   } else {
     connectOpts.password = options.password;
   }
@@ -221,7 +247,7 @@ export function runSshCommandStream(
     };
 
     if (options.privateKey) {
-      connectOpts.privateKey = options.privateKey;
+      connectOpts.privateKey = normalizePrivateKey(options.privateKey!);
     } else {
       connectOpts.password = options.password;
     }
@@ -292,7 +318,7 @@ export function testSshConnection(options: SshConnectionOptions): Promise<{ succ
     };
 
     if (options.privateKey) {
-      connectOpts.privateKey = options.privateKey;
+      connectOpts.privateKey = normalizePrivateKey(options.privateKey!);
     } else {
       connectOpts.password = options.password;
     }
