@@ -194,9 +194,19 @@ export default function Servers() {
               <label className="block text-sm text-muted-foreground mb-1">Password</label>
               <input name="password" type="password" value={form.password} onChange={handleChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1">Private Key (optional)</label>
-              <input name="privateKey" value={form.privateKey} onChange={handleChange} placeholder="Paste SSH private key..." className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            <div className="sm:col-span-2">
+              <label className="block text-sm text-muted-foreground mb-1">
+                Private Key <span className="opacity-60">(optional — paste full PEM key for AWS/key-based auth)</span>
+              </label>
+              <textarea
+                name="privateKey"
+                value={form.privateKey}
+                onChange={handleChange}
+                placeholder={"-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"}
+                rows={5}
+                className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+              />
+              <p className="text-xs text-muted-foreground mt-1">AWS username is usually <code className="bg-muted px-1 rounded">ec2-user</code> (Amazon Linux) or <code className="bg-muted px-1 rounded">ubuntu</code> (Ubuntu). Leave password blank when using a key.</p>
             </div>
           </div>
           <div className="flex gap-3 pt-2">
@@ -313,9 +323,16 @@ export default function Servers() {
                       <label className="block text-xs text-muted-foreground mb-1">Password <span className="opacity-60">(leave blank to keep existing)</span></label>
                       <input name="password" type="password" value={editForm.password} onChange={handleEditChange} placeholder="New password..." className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                     </div>
-                    <div>
+                    <div className="sm:col-span-2">
                       <label className="block text-xs text-muted-foreground mb-1">Private Key <span className="opacity-60">(leave blank to keep existing)</span></label>
-                      <input name="privateKey" value={editForm.privateKey} onChange={handleEditChange} placeholder="Paste SSH key..." className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                      <textarea
+                        name="privateKey"
+                        value={editForm.privateKey}
+                        onChange={handleEditChange}
+                        placeholder={"-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"}
+                        rows={5}
+                        className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                      />
                     </div>
                   </div>
                   <div className="flex gap-2">
