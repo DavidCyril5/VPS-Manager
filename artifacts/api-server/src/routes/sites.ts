@@ -61,7 +61,7 @@ async function getCfConfigsForSite(siteData: Record<string, unknown>) {
   return CloudflareConfig.find();
 }
 
-const ENSURE_NODE = `command -v npm >/dev/null 2>&1 || (curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs)`;
+const ENSURE_NODE = `command -v npm >/dev/null 2>&1 || (curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs)`;
 
 function nodeAutoBuild(deployPath: string): string {
   // Must use semicolons inside if/elif/else — joining with && breaks elif/else syntax
