@@ -84,3 +84,4 @@ externalPort = 3000
 
 [userenv.shared]
 NODE_ENV = "production"
+PORT = "8080"
