@@ -8,7 +8,7 @@ import {
   useInstallNginx,
   getListServersQueryKey,
 } from "@workspace/api-client-react";
-import { Server, Plus, Trash2, Wifi, Settings2, CheckCircle2, XCircle, WifiOff, Pencil, X } from "lucide-react";
+import { Server, Plus, Trash2, Wifi, Settings2, CheckCircle2, XCircle, WifiOff, Pencil, X, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -44,14 +44,38 @@ export default function Servers() {
     privateKey: "",
   });
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: name === "port" ? Number(value) : value }));
   }
 
-  function handleEditChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleEditChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
     const { name, value } = e.target;
     setEditForm((f) => ({ ...f, [name]: name === "port" ? Number(value) : value }));
+  }
+
+  function handlePemUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) ?? "";
+      setForm((f) => ({ ...f, privateKey: text }));
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  function handleEditPemUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) ?? "";
+      setEditForm((f) => ({ ...f, privateKey: text }));
+    };
+    reader.readAsText(file);
+    e.target.value = "";
   }
 
   function openEdit(server: { id: number; name: string; host: string; port: number; username: string; status: string }) {
@@ -195,9 +219,16 @@ export default function Servers() {
               <input name="password" type="password" value={form.password} onChange={handleChange} className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-sm text-muted-foreground mb-1">
-                Private Key <span className="opacity-60">(optional — paste full PEM key for AWS/key-based auth)</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm text-muted-foreground">
+                  Private Key <span className="opacity-60">(optional — for AWS/key-based auth)</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs bg-muted hover:bg-muted/70 text-foreground px-3 py-1.5 rounded-lg transition-colors">
+                  <Upload className="h-3 w-3" />
+                  Upload .pem file
+                  <input type="file" accept=".pem,.key,.txt" onChange={handlePemUpload} className="hidden" />
+                </label>
+              </div>
               <textarea
                 name="privateKey"
                 value={form.privateKey}
@@ -324,7 +355,14 @@ export default function Servers() {
                       <input name="password" type="password" value={editForm.password} onChange={handleEditChange} placeholder="New password..." className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="block text-xs text-muted-foreground mb-1">Private Key <span className="opacity-60">(leave blank to keep existing)</span></label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs text-muted-foreground">Private Key <span className="opacity-60">(leave blank to keep existing)</span></label>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-xs bg-muted hover:bg-muted/70 text-foreground px-3 py-1.5 rounded-lg transition-colors">
+                          <Upload className="h-3 w-3" />
+                          Upload .pem file
+                          <input type="file" accept=".pem,.key,.txt" onChange={handleEditPemUpload} className="hidden" />
+                        </label>
+                      </div>
                       <textarea
                         name="privateKey"
                         value={editForm.privateKey}
