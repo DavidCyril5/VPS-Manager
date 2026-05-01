@@ -115,7 +115,7 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       `if [ -d "${deployPath}/.git" ]; then`,
       `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
       `else`,
-      `  sudo rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
+      `  sudo rm -rf ${deployPath} && sudo mkdir -p ${deployPath} && sudo chown $(whoami):$(whoami) ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
       `fi`,
     ].join("\n");
     deployScript = buildCommand
@@ -789,7 +789,7 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
     `if [ -d "${deployPath}/.git" ]; then`,
     `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
     `else`,
-    `  sudo rm -rf ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
+    `  sudo rm -rf ${deployPath} && sudo mkdir -p ${deployPath} && sudo chown $(whoami):$(whoami) ${deployPath} && git clone ${cloneUrl} ${deployPath}`,
     `fi`,
   ].join("\n");
   const deployScript = buildCommand
