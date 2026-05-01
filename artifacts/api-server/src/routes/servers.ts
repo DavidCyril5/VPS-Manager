@@ -148,18 +148,27 @@ router.post("/servers/:id/install-nginx", async (req, res): Promise<void> => {
   const s = server.toObject() as Record<string, unknown>;
 
   const installScript = `
-    export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update -qq && \
-    apt-get install -y nginx certbot python3-certbot-nginx git curl && \
-    systemctl enable nginx && \
-    systemctl start nginx && \
+    if command -v apt-get &>/dev/null; then
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update -qq
+      sudo apt-get install -y nginx certbot python3-certbot-nginx git curl
+    elif command -v dnf &>/dev/null; then
+      sudo dnf install -y nginx certbot python3-certbot-nginx git curl
+    elif command -v yum &>/dev/null; then
+      sudo yum install -y epel-release
+      sudo yum install -y nginx certbot python3-certbot-nginx git curl
+    else
+      echo "ERROR: No supported package manager found (apt/dnf/yum)" && exit 1
+    fi
+    sudo systemctl enable nginx
+    sudo systemctl start nginx
     echo "Nginx installed and started successfully"
   `.trim();
 
   const result = await runSshCommand(
     { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
-    installScript,
-    120000
+    `bash -c '${installScript.replace(/'/g, "'\\''")}'`,
+    180000
   );
 
   if (result.success) {
@@ -188,17 +197,27 @@ router.post("/servers/:id/install-node", async (req, res): Promise<void> => {
   const s = server.toObject() as Record<string, unknown>;
 
   const script = `
-    export DEBIAN_FRONTEND=noninteractive && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    node -v && npm -v && \
+    if command -v apt-get &>/dev/null; then
+      export DEBIAN_FRONTEND=noninteractive
+      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+    elif command -v dnf &>/dev/null; then
+      curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+      sudo dnf install -y nodejs
+    elif command -v yum &>/dev/null; then
+      curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+      sudo yum install -y nodejs
+    else
+      echo "ERROR: No supported package manager found (apt/dnf/yum)" && exit 1
+    fi
+    node -v && npm -v
     echo "Node.js installed successfully"
   `.trim();
 
   const result = await runSshCommand(
     { host: s.host as string, port: s.port as number, username: s.username as string, password: decryptSecret(s.password as string), privateKey: s.privateKey ? decryptSecret(s.privateKey as string) : null },
-    script,
-    120000
+    `bash -c '${script.replace(/'/g, "'\\''")}'`,
+    180000
   );
 
   await Activity.create({
