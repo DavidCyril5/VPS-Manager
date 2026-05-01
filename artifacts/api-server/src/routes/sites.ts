@@ -68,9 +68,9 @@ function nodeAutoBuild(deployPath: string): string {
   const hasBuildScript = `node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.build?0:1)" 2>/dev/null`;
   const detectPm =
     `if [ -f "pnpm-lock.yaml" ]; then ` +
-      `command -v pnpm >/dev/null 2>&1 || npm install -g pnpm; PMCMD="$(dirname $(which npm))/pnpm"; ` +
+      `command -v pnpm >/dev/null 2>&1 || sudo npm install -g pnpm; PMCMD="$(dirname $(which npm))/pnpm"; ` +
     `elif [ -f "yarn.lock" ]; then ` +
-      `command -v yarn >/dev/null 2>&1 || npm install -g yarn; PMCMD="$(dirname $(which npm))/yarn"; ` +
+      `command -v yarn >/dev/null 2>&1 || sudo npm install -g yarn; PMCMD="$(dirname $(which npm))/yarn"; ` +
     `else PMCMD="npm"; fi`;
   return [
     ENSURE_NODE,
@@ -110,6 +110,8 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       ? repoUrl.replace("https://", `https://oauth2:${repoToken}@`)
       : repoUrl;
     const gitBlock = [
+      `sudo mkdir -p ${deployPath}`,
+      `sudo chown $(whoami):$(whoami) ${deployPath}`,
       `if [ -d "${deployPath}/.git" ]; then`,
       `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
       `else`,
@@ -120,7 +122,7 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
       ? `${gitBlock} && cd ${deployPath} && ${buildCommand}`
       : gitBlock;
   } else {
-    deployScript = `mkdir -p ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
+    deployScript = `sudo mkdir -p ${deployPath} && sudo chown $(whoami):$(whoami) ${deployPath} && echo "Deploy path ready: ${deployPath}"`;
   }
 
   // --- pm2 process management (nodejs / python) ---
@@ -143,7 +145,7 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
     });
     pm2Script = [
       ENSURE_NODE,
-      `command -v pm2 >/dev/null 2>&1 || npm install -g pm2`,
+      `command -v pm2 >/dev/null 2>&1 || sudo npm install -g pm2`,
       `cd ${deployPath}`,
       `echo '${pm2Config.replace(/'/g, "\\'")}' > ${pm2ConfigPath}`,
       `pm2 startOrRestart ${pm2ConfigPath}`,
@@ -192,10 +194,10 @@ function buildDeployParts(siteData: Record<string, unknown>): DeployParts {
 
   const nginxConfigB64 = Buffer.from(nginxConfig).toString("base64");
   const setupNginx = [
-    `echo '${nginxConfigB64}' | base64 -d > /etc/nginx/sites-available/${domain}`,
-    `rm -f /etc/nginx/sites-enabled/${domain}`,
-    `ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}`,
-    `nginx -t && systemctl reload nginx`,
+    `echo '${nginxConfigB64}' | base64 -d | sudo tee /etc/nginx/sites-available/${domain} > /dev/null`,
+    `sudo rm -f /etc/nginx/sites-enabled/${domain}`,
+    `sudo ln -sf /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/${domain}`,
+    `sudo nginx -t && sudo systemctl reload nginx`,
   ].join(" && ");
 
   return { deployScript, pm2Script, setupNginx };
@@ -280,10 +282,10 @@ router.delete("/sites/:id", async (req, res): Promise<void> => {
       ? `pm2 delete "${pm2Name}" 2>/dev/null || true && pm2 save && `
       : "";
     const cleanupScript = [
-      `${pm2Cleanup}rm -f /etc/nginx/sites-enabled/${domain}`,
-      `rm -f /etc/nginx/sites-available/${domain}`,
-      `nginx -t && systemctl reload nginx`,
-      `rm -rf ${deployPath}`,
+      `${pm2Cleanup}sudo rm -f /etc/nginx/sites-enabled/${domain}`,
+      `sudo rm -f /etc/nginx/sites-available/${domain}`,
+      `sudo nginx -t && sudo systemctl reload nginx`,
+      `sudo rm -rf ${deployPath}`,
     ].join(" && ");
     await runSshCommand(sshOpts, cleanupScript, 30000).catch(() => {});
   }
@@ -589,7 +591,7 @@ router.post("/sites/:id/ssl", async (req, res): Promise<void> => {
   const serverData = server.toObject() as Record<string, unknown>;
 
   const domain = siteData.domain as string;
-  const sslScript = `certbot --nginx -d ${domain} --non-interactive --agree-tos --email admin@${domain} --redirect`;
+  const sslScript = `sudo certbot --nginx -d ${domain} --non-interactive --agree-tos --email admin@${domain} --redirect`;
   const sshOpts = getSshOpts(serverData);
 
   const result = await runSshCommand(sshOpts, sslScript, 120000);
@@ -679,12 +681,8 @@ router.put("/sites/:id/nginx-config", async (req, res): Promise<void> => {
   const serverData = server.toObject() as Record<string, unknown>;
 
   const domain = siteData.domain as string;
-  const script = `
-cat > /etc/nginx/sites-available/${domain} << 'NGINX_EOF'
-${parsed.data.config}
-NGINX_EOF
-nginx -t && systemctl reload nginx
-  `.trim();
+  const configB64 = Buffer.from(parsed.data.config).toString("base64");
+  const script = `echo '${configB64}' | base64 -d | sudo tee /etc/nginx/sites-available/${domain} > /dev/null && sudo nginx -t && sudo systemctl reload nginx`;
 
   const result = await runSshCommand(
     getSshOpts(serverData),
@@ -723,7 +721,7 @@ router.get("/sites/:id/ssl-status", async (req, res): Promise<void> => {
 
   const result = await runSshCommand(
     getSshOpts(serverData),
-    `certbot certificates -d ${domain} 2>/dev/null | grep "Expiry Date" | head -1`,
+    `sudo certbot certificates -d ${domain} 2>/dev/null | grep "Expiry Date" | head -1`,
     20000
   );
 
@@ -944,7 +942,7 @@ router.post("/sites/:id/setup-ssl-renewal", async (req, res): Promise<void> => {
   const server = await Server.findOne({ id: siteData.serverId });
   if (!server) { res.status(404).json({ error: "Server not found" }); return; }
   const serverData = server.toObject() as Record<string, unknown>;
-  const cronLine = "0 3 * * * /usr/bin/certbot renew --quiet --post-hook 'systemctl reload nginx' >> /var/log/certbot-renew.log 2>&1";
+  const cronLine = "0 3 * * * sudo /usr/bin/certbot renew --quiet --post-hook 'sudo systemctl reload nginx' >> /var/log/certbot-renew.log 2>&1";
   const cmd = `(crontab -l 2>/dev/null | grep -v 'certbot renew'; echo '${cronLine}') | crontab - && echo "SSL auto-renewal cron configured" 2>&1`;
   const result = await runSshCommand(getSshOpts(serverData), cmd, 15000);
   res.json(result);
