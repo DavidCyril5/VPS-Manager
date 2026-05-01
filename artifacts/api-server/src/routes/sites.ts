@@ -784,6 +784,8 @@ router.post("/webhook/:token", async (req, res): Promise<void> => {
     : repoUrl;
 
   const gitBlock = [
+    `sudo mkdir -p ${deployPath}`,
+    `sudo chown $(whoami):$(whoami) ${deployPath}`,
     `if [ -d "${deployPath}/.git" ]; then`,
     `  cd ${deployPath} && git fetch --all && git reset --hard origin/HEAD`,
     `else`,
