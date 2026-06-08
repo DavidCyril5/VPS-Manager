@@ -1,0 +1,73 @@
+Cloning into '/var/www/cinverse'...
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated rimraf@2.7.1: Rimraf versions prior to v4 are no longer supported
+npm warn deprecated rollup-plugin-terser@7.0.2: This package has been deprecated and is no longer maintained. Please use @rollup/plugin-terser
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated sourcemap-codec@1.4.8: Please use @jridgewell/sourcemap-codec instead
+npm warn deprecated workbox-cacheable-response@6.6.0: workbox-background-sync@6.6.0
+npm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+npm warn deprecated workbox-google-analytics@6.6.0: It is not compatible with newer versions of GA starting with v4, as long as you are using GAv3 it should be ok, but the package is not longer being maintained
+
+added 946 packages, and audited 947 packages in 24s
+
+149 packages are looking for funding
+  run `npm fund` for details
+
+19 vulnerabilities (2 low, 5 moderate, 12 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.
+
+> nextn@0.1.0 build
+> next build
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+   ▲ Next.js 15.5.14
+   - Environments: .env
+
+   Creating an optimized production build ...
+ ⨯ Next.js can't recognize the exported `config` field in route "/recommendations/page":
+Unsupported node type "CallExpression" at "dynamic".
+Read More - https://nextjs.org/docs/messages/invalid-page-config
+> [PWA] Compile server
+> [PWA] Compile server
+> [PWA] Compile client (static)
+> [PWA] Auto register service worker with: /var/www/cinverse/node_modules/next-pwa/register.js
+> [PWA] Service worker: /var/www/cinverse/public/sw.js
+> [PWA]   url: /sw.js
+> [PWA]   scope: /
+ ⚠ Compiled with warnings in 17.5s
+
+./src/components/cast-button.tsx
+Attempted import error: 'TvOff' is not exported from '__barrel_optimize__?names=Tv,TvOff!=!lucide-react' (imported as 'TvOff').
+
+Import trace for requested module:
+./src/components/cast-button.tsx
+./src/components/player.tsx
+./src/components/stream-button.tsx
+./src/components/movie-detail-client-view.tsx
+
+./src/components/cast-button.tsx
+Attempted import error: 'TvOff' is not exported from '__barrel_optimize__?names=Tv,TvOff!=!lucide-react' (imported as 'TvOff').
+
+Import trace for requested module:
+./src/components/cast-button.tsx
+./src/components/player.tsx
+./src/components/stream-button.tsx
+./src/components/movie-detail-client-view.tsx
+
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+ ⨯ Invalid segment configuration export detected. This can cause unexpected behavior from the configs not being applied. You should see the relevant failures in the logs above. Please fix them to continue.
+✗ Deploy failed — scroll up to see the error

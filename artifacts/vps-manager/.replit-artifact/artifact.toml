@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "VPS Website Manager"
+version = "1.0.0"
+id = "artifacts/vps-manager"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23104
+
+[services.development]
+run = "pnpm --filter @workspace/vps-manager run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/vps-manager", "run", "build" ]
+publicDir = "artifacts/vps-manager/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23104"
+BASE_PATH = "/"
